@@ -1,15 +1,24 @@
-
 /* ======================================
-   TEACHER LIBRARY
-====================================== */
+   TEACHER LIBRARY — complete stylesheet
+   ====================================== */
 
 .teacher-library-page {
+  --tl-primary: #315fb4;
+  --tl-primary-dark: #254d98;
+  --tl-focus: #4776d0;
+  --tl-focus-ring: rgba(71, 118, 208, 0.12);
+  --tl-ink: #26364a;
+  --tl-muted: #718096;
+  --tl-line: #e0e6ee;
+
   display: flex;
   flex-direction: column;
   gap: 22px;
   padding-bottom: 35px;
-  color: #26364a;
+  color: var(--tl-ink);
 }
+
+/* ---------------- Header ---------------- */
 
 .teacher-library-header,
 .teacher-list-heading {
@@ -23,13 +32,14 @@
   margin: 0 0 7px;
   font-size: 26px;
   font-weight: 700;
+  letter-spacing: -0.3px;
 }
 
 .teacher-library-header p,
 .teacher-panel-heading p,
 .teacher-list-heading p {
   margin: 0;
-  color: #718096;
+  color: var(--tl-muted);
   font-size: 13px;
 }
 
@@ -38,16 +48,19 @@
   align-items: center;
   gap: 9px;
   padding: 10px 14px;
-  border: 1px solid #e0e6ee;
+  border: 1px solid var(--tl-line);
   border-radius: 9px;
   color: #52647d;
   font-size: 13px;
   background: #fff;
+  white-space: nowrap;
 }
+
+/* ---------------- Stats ---------------- */
 
 .teacher-library-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -56,24 +69,27 @@
   flex-direction: column;
   gap: 9px;
   padding: 19px;
-  border: 1px solid #e0e6ee;
+  border: 1px solid var(--tl-line);
   border-radius: 11px;
   background: #fff;
 }
 
 .teacher-stat-card span {
-  color: #718096;
+  color: var(--tl-muted);
   font-size: 13px;
 }
 
 .teacher-stat-card strong {
   font-size: 27px;
-  color: #26364a;
+  color: var(--tl-ink);
+  font-variant-numeric: tabular-nums;
 }
+
+/* ---------------- Panels ---------------- */
 
 .teacher-panel {
   padding: 23px;
-  border: 1px solid #e0e6ee;
+  border: 1px solid var(--tl-line);
   border-radius: 12px;
   background: #fff;
 }
@@ -90,8 +106,10 @@
   gap: 9px;
   margin: 0 0 7px;
   font-size: 18px;
-  color: #26364a;
+  color: var(--tl-ink);
 }
+
+/* ---------------- Labels + text inputs ---------------- */
 
 .teacher-library-page label {
   display: block;
@@ -107,11 +125,18 @@
   padding: 12px;
   border: 1px solid #d5dce5;
   border-radius: 8px;
-  color: #26364a;
+  color: var(--tl-ink);
   background: #fff;
   font: inherit;
   outline: none;
   box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Compact inputs inside the inline edit row */
+.teacher-table td > input {
+  padding: 8px 10px;
+  font-size: 13px;
 }
 
 .teacher-library-page textarea {
@@ -122,15 +147,17 @@
 
 .teacher-library-page textarea:focus,
 .teacher-library-page input:focus {
-  border-color: #4776d0;
-  box-shadow: 0 0 0 3px rgba(71, 118, 208, 0.12);
+  border-color: var(--tl-focus);
+  box-shadow: 0 0 0 3px var(--tl-focus-ring);
 }
 
 .teacher-input-help {
   margin-top: 8px;
-  color: #718096;
+  color: var(--tl-muted);
   font-size: 12px;
 }
+
+/* ---------------- Bulk-entry preview ---------------- */
 
 .teacher-preview-summary {
   display: flex;
@@ -149,6 +176,8 @@
 .teacher-table-wrapper {
   width: 100%;
   overflow-x: auto;
+  border: 1px solid var(--tl-line);
+  border-radius: 9px;
 }
 
 .teacher-table {
@@ -160,9 +189,11 @@
 
 .teacher-table th {
   padding: 13px 12px;
+  border-bottom: 1px solid var(--tl-line);
   background: #f5f7fb;
   color: #52647d;
   font-weight: 600;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -172,9 +203,17 @@
   vertical-align: middle;
 }
 
+.teacher-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.teacher-table tbody tr:hover {
+  background: #fafbfd;
+}
+
 .teacher-full-name {
   font-weight: 600;
-  color: #26364a;
+  color: var(--tl-ink);
 }
 
 .teacher-status-valid,
@@ -183,13 +222,10 @@
   font-weight: 600;
 }
 
-.teacher-status-valid {
-  color: #28734b;
-}
+.teacher-status-valid { color: #28734b; }
+.teacher-status-error { color: #c04444; }
 
-.teacher-status-error {
-  color: #c04444;
-}
+/* ---------------- Action bars ---------------- */
 
 .teacher-form-actions,
 .teacher-row-actions {
@@ -199,9 +235,7 @@
   gap: 10px;
 }
 
-.teacher-form-actions {
-  margin-top: 20px;
-}
+.teacher-form-actions { margin-top: 20px; }
 
 .teacher-primary-btn,
 .teacher-secondary-btn,
@@ -218,35 +252,42 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* ---------- Primary ---------- */
 .teacher-primary-btn {
-  border: 1px solid #315fb4;
-  background: #315fb4;
+  border: 1px solid var(--tl-primary);
+  background: var(--tl-primary);
   color: #fff;
 }
-
-.teacher-primary-btn:hover {
-  background: #254d98;
+.teacher-primary-btn:hover:not(:disabled) {
+  background: var(--tl-primary-dark);
+  border-color: var(--tl-primary-dark);
 }
 
+/* ---------- Secondary / view toggle ---------- */
 .teacher-secondary-btn,
 .teacher-view-toggle {
   border: 1px solid #d5dce5;
   background: #fff;
   color: #52647d;
 }
-
-.teacher-secondary-btn:hover,
-.teacher-view-toggle:hover {
+.teacher-secondary-btn:hover:not(:disabled),
+.teacher-view-toggle:hover:not(:disabled) {
   background: #f5f7fb;
+  border-color: #bfc9d6;
 }
 
+/* ---------- Edit / archive / restore ---------- */
 .teacher-edit-btn {
   border: 1px solid #d5dce5;
   background: #fff;
-  color: #315fb4;
+  color: var(--tl-primary);
+}
+.teacher-edit-btn:hover:not(:disabled) {
+  background: #eef3ff;
+  border-color: #b3c6ef;
 }
 
 .teacher-archive-btn {
@@ -254,17 +295,44 @@
   background: #fff;
   color: #b34d4d;
 }
+.teacher-archive-btn:hover:not(:disabled) {
+  background: #fdf0f0;
+  border-color: #e0bcbc;
+}
 
 .teacher-restore-btn {
   border: 1px solid #d5e8dc;
   background: #fff;
   color: #28734b;
 }
+.teacher-restore-btn:hover:not(:disabled) {
+  background: #eef7f2;
+  border-color: #b9dbc4;
+}
 
-.teacher-primary-btn:disabled {
+/* ---------- Focus + disabled for every button ---------- */
+.teacher-primary-btn:focus-visible,
+.teacher-secondary-btn:focus-visible,
+.teacher-view-toggle:focus-visible,
+.teacher-edit-btn:focus-visible,
+.teacher-archive-btn:focus-visible,
+.teacher-restore-btn:focus-visible,
+.teacher-notice button:focus-visible {
+  outline: 2px solid var(--tl-primary);
+  outline-offset: 2px;
+}
+
+.teacher-primary-btn:disabled,
+.teacher-secondary-btn:disabled,
+.teacher-view-toggle:disabled,
+.teacher-edit-btn:disabled,
+.teacher-archive-btn:disabled,
+.teacher-restore-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* ---------------- Search ---------------- */
 
 .teacher-search {
   display: flex;
@@ -274,19 +342,33 @@
   padding: 0 12px;
   border: 1px solid #d5dce5;
   border-radius: 8px;
-  color: #718096;
+  color: var(--tl-muted);
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.teacher-search:focus-within {
+  border-color: var(--tl-focus);
+  box-shadow: 0 0 0 3px var(--tl-focus-ring);
 }
 
 .teacher-search input {
+  width: 100%;
+  padding: 12px 0;
   border: none;
   box-shadow: none;
   outline: none;
+  background: transparent;
 }
 
+/* Inner input must not paint its own focus ring */
 .teacher-search input:focus {
   box-shadow: none;
   border: none;
+  outline: none;
 }
+
+/* ---------------- Nickname badge ---------------- */
 
 .teacher-nickname {
   display: inline-block;
@@ -294,15 +376,21 @@
   padding: 5px 9px;
   border-radius: 6px;
   background: #edf2fa;
-  color: #315fb4;
+  color: var(--tl-primary);
   font-weight: 700;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
+
+/* ---------------- Empty state ---------------- */
 
 .teacher-empty-state {
   padding: 35px 15px;
   text-align: center;
-  color: #718096;
+  color: var(--tl-muted);
+  border: 1px dashed #d3dce8;
+  border-radius: 9px;
+  background: #fafbfd;
 }
 
 .teacher-empty-state h3 {
@@ -315,6 +403,8 @@
   font-size: 13px;
 }
 
+/* ---------------- Notice (green + variants) ---------------- */
+
 .teacher-notice {
   display: flex;
   justify-content: space-between;
@@ -326,23 +416,53 @@
   background: #f1f8f4;
   color: #28734b;
   font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Warning variant — used for validation ("Please enter teacher names first", etc.) */
+.teacher-notice.warning {
+  border-color: #f0d79d;
+  background: #fff9e9;
+  color: #79520b;
+}
+
+/* Error variant — used for hard failures */
+.teacher-notice.error {
+  border-color: #f4c4c4;
+  background: #fdf1f1;
+  color: #991b1b;
 }
 
 .teacher-notice button {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
   border: none;
+  border-radius: 4px;
   background: transparent;
   color: inherit;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
+
+.teacher-notice button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* ---------------- Auto-save note ---------------- */
 
 .teacher-auto-save {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #718096;
+  color: var(--tl-muted);
   font-size: 12px;
 }
+
+/* ======================================
+   RESPONSIVE
+   ====================================== */
 
 @media (max-width: 700px) {
   .teacher-library-stats {
@@ -366,5 +486,89 @@
 
   .teacher-form-actions button {
     width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .teacher-library-page {
+    padding-bottom: 24px;
+  }
+
+  .teacher-library-header h1 {
+    font-size: 22px;
+  }
+
+  .teacher-row-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .teacher-row-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .teacher-search {
+    padding: 0 10px;
+  }
+}
+
+/* ======================================
+   REDUCED MOTION
+   ====================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .teacher-library-page *,
+  .teacher-library-page *::before,
+  .teacher-library-page *::after {
+    transition: none !important;
+  }
+}
+
+/* ======================================
+   PRINT
+   ====================================== */
+
+@media print {
+  .teacher-library-header,
+  .teacher-library-project,
+  .teacher-library-stats,
+  .teacher-form-actions,
+  .teacher-view-toggle,
+  .teacher-search,
+  .teacher-row-actions,
+  .teacher-notice,
+  .teacher-auto-save,
+  .teacher-panel-heading form,
+  .teacher-library-page textarea {
+    display: none !important;
+  }
+
+  .teacher-library-page {
+    padding-bottom: 0;
+  }
+
+  .teacher-panel {
+    border-color: #999;
+    box-shadow: none;
+    break-inside: avoid;
+    padding: 12px;
+  }
+
+  .teacher-table-wrapper,
+  .teacher-preview-table-wrapper {
+    border-color: #999;
+    overflow: visible;
+  }
+
+  .teacher-table th,
+  .teacher-table td {
+    border-color: #ccc;
+    padding: 8px 10px;
+  }
+
+  .teacher-nickname {
+    background: transparent;
+    border: 1px solid #ccc;
   }
 }

@@ -139,9 +139,9 @@ useEffect(() => {
           </p>
         </div>
 
-        <div className="save-indicator">
-          <Cloud size={16} />
-          {saveStatus}
+        <div className={`save-indicator ${saveStatus === "Saving..." ? "saving" : ""}`}>
+  <Cloud size={16} />
+  {saveStatus}
         </div>
 
       </div>

@@ -15,6 +15,27 @@ import {
 
 import "../styles/teacher-mapping.css";
 
+// Two mappings belong to the same "split group" when they share class, section and subject.
+function sameGroup(mapping, classId, sectionId, subjectId) {
+  return (
+    mapping.classId === classId &&
+    mapping.sectionId === sectionId &&
+    mapping.subjectId === subjectId
+  );
+}
+
+// Divide `required` weekly periods as evenly as possible among teacher ids.
+function evenSplit(teacherIds, required) {
+  const base = Math.floor(required / teacherIds.length);
+  let extra = required % teacherIds.length;
+  const result = {};
+  teacherIds.forEach((id) => {
+    result[id] = base + (extra > 0 ? 1 : 0);
+    if (extra > 0) extra -= 1;
+  });
+  return result;
+}
+
 export default function TeacherMapping({ project, onSave }) {
   // ==========================================
   // 1. PROJECT DATA
@@ -39,7 +60,7 @@ export default function TeacherMapping({ project, onSave }) {
   // ==========================================
 
   const [teacherMappings, setTeacherMappings] = useState(
-    project?.data?.teacherMappings || []
+    () => normalizeAll(project?.data?.teacherMappings || [])
   );
 
   const [allotmentMode, setAllotmentMode] = useState("teacher");
@@ -51,6 +72,7 @@ export default function TeacherMapping({ project, onSave }) {
   // Class-wise selection
   const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedTeachers, setSelectedTeachers] = useState([]);
+  const [teacherPeriodAllocations, setTeacherPeriodAllocations] = useState({});
 
   const [searchTeacher, setSearchTeacher] = useState("");
   const [searchAvailableTeacher, setSearchAvailableTeacher] =
@@ -87,7 +109,8 @@ export default function TeacherMapping({ project, onSave }) {
   }, [onSave]);
 
   useEffect(() => {
-    setTeacherMappings(project?.data?.teacherMappings || []);
+    setTeacherMappings(normalizeAll(project?.data?.teacherMappings || []));
+    setTeacherPeriodAllocations({});
 
     setSelectedTeacher("");
     setSelectedClass("");
@@ -184,13 +207,146 @@ export default function TeacherMapping({ project, onSave }) {
   // 6. COMMON ASSIGNMENT FUNCTION
   // ==========================================
 
+  // ==========================================
+  // 6. SPLIT-GROUP HELPERS
+  // ==========================================
+  // A "group" is every teacher mapped to one subject in one class section.
+  // Each mapping carries a subject code (MATH-1, MATH-2 ...) and the weekly
+  // periods that teacher takes. A lone teacher always takes all periods.
+
+  function getWeeklyPeriods(classId, subjectId) {
+    const mapping = classSubjectMappings.find(
+      (item) => item.classId === classId && item.subjectId === subjectId
+    );
+    return Number(mapping?.periodsPerWeek || 0);
+  }
+
+  function getSubjectWeeklyPeriods(subjectId) {
+    return getWeeklyPeriods(selectedClass, subjectId);
+  }
+
+  function getSubjectCode(subjectId) {
+    const subject = subjects.find((item) => item.id === subjectId);
+    const source = String(subject?.shortName || subject?.code || subject?.name || "SUB").trim();
+    const words = source.split(/[^A-Za-z0-9]+/).filter(Boolean);
+    return (
+      (words.length > 1
+        ? words.map((word) => word[0]).join("")
+        : source.replace(/[^A-Za-z0-9]/g, "").slice(0, 5)
+      ).toUpperCase() || "SUB"
+    );
+  }
+
+  // Renumber subject codes from 1 and keep quotas consistent for one group.
+  function normalizeGroup(list, classId, sectionId, subjectId) {
+    const groupSize = list.filter((mapping) =>
+      sameGroup(mapping, classId, sectionId, subjectId)
+    ).length;
+
+    if (groupSize === 0) return list;
+
+    const required = getWeeklyPeriods(classId, subjectId);
+    const baseCode = getSubjectCode(subjectId);
+    let position = 0;
+
+    return list.map((mapping) => {
+      if (!sameGroup(mapping, classId, sectionId, subjectId)) return mapping;
+
+      position += 1;
+
+      return {
+        ...mapping,
+        subjectCode: `${baseCode}-${position}`,
+        periodsAllocated:
+          groupSize === 1 ? required : Number(mapping.periodsAllocated || 0),
+      };
+    });
+  }
+
+  // Bring older saved data in line (codes and quotas). Mappings that have no
+  // section (very old records) are left exactly as they are.
+  function normalizeAll(list) {
+    const seen = new Set();
+    let result = list;
+
+    list.forEach((mapping) => {
+      if (!mapping.sectionId) return;
+
+      const key = `${mapping.classId}::${mapping.sectionId}::${mapping.subjectId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      result = normalizeGroup(
+        result,
+        mapping.classId,
+        mapping.sectionId,
+        mapping.subjectId
+      );
+    });
+
+    return result;
+  }
+
+  function getGroupStatus(classId, sectionId, subjectId) {
+    const group = teacherMappings.filter((mapping) =>
+      sameGroup(mapping, classId, sectionId, subjectId)
+    );
+    const required = getWeeklyPeriods(classId, subjectId);
+    const total = group.reduce(
+      (sum, mapping) => sum + Number(mapping.periodsAllocated || 0),
+      0
+    );
+
+    return {
+      count: group.length,
+      required,
+      total,
+      ok: group.length <= 1 || (required > 0 && total === required),
+    };
+  }
+
+  function groupWarning(mapping) {
+    if (!mapping.sectionId) return "";
+
+    const status = getGroupStatus(
+      mapping.classId,
+      mapping.sectionId,
+      mapping.subjectId
+    );
+
+    if (status.ok) return "";
+
+    return status.required > 0
+      ? `Split incomplete: ${status.total}/${status.required} periods allocated`
+      : "Weekly periods not set for this subject";
+  }
+
+  function periodsLabel(mapping) {
+    const warning = groupWarning(mapping);
+
+    return (
+      <>
+        {mapping.periodsAllocated
+          ? ` · ${mapping.periodsAllocated} periods/week`
+          : ""}
+        {warning && (
+          <em style={{ color: "#b45309", fontStyle: "normal", marginLeft: 8 }}>
+            ⚠ {warning}
+          </em>
+        )}
+      </>
+    );
+  }
+
+  // ==========================================
+  // 7. COMMON ASSIGNMENT FUNCTION
+  // ==========================================
+
   function addAssignment(teacherId, classId, sectionId, subjectId) {
     const alreadyAssigned = teacherMappings.some(
       (mapping) =>
         mapping.teacherId === teacherId &&
-        mapping.classId === classId &&
-        mapping.sectionId === sectionId &&
-        mapping.subjectId === subjectId
+        sameGroup(mapping, classId, sectionId, subjectId)
     );
 
     if (alreadyAssigned) {
@@ -203,18 +359,30 @@ export default function TeacherMapping({ project, onSave }) {
       classId,
       sectionId,
       subjectId,
+      subjectCode: "",
+      periodsAllocated: 0,
     };
 
-    setTeacherMappings((previous) => [
-      ...previous,
-      newAssignment,
-    ]);
+    setTeacherMappings((previous) =>
+      previous.some(
+        (mapping) =>
+          mapping.teacherId === teacherId &&
+          sameGroup(mapping, classId, sectionId, subjectId)
+      )
+        ? previous
+        : normalizeGroup(
+            [...previous, newAssignment],
+            classId,
+            sectionId,
+            subjectId
+          )
+    );
 
     return true;
   }
 
   // ==========================================
-  // 7. TEACHER-WISE ALLOTMENT
+  // 8. TEACHER-WISE ALLOTMENT
   // ==========================================
 
   function assignTeacherWise(subjectId) {
@@ -222,6 +390,10 @@ export default function TeacherMapping({ project, onSave }) {
       setNotice("Select teacher, class and section first.");
       return;
     }
+
+    const hadOtherTeachers = teacherMappings.some((mapping) =>
+      sameGroup(mapping, selectedClass, selectedSection, subjectId)
+    );
 
     const added = addAssignment(
       selectedTeacher,
@@ -238,34 +410,105 @@ export default function TeacherMapping({ project, onSave }) {
     }
 
     setNotice(
-      `${getSubjectName(subjectId)} assigned to ${selectedTeacherData?.name}.`
+      `${getSubjectName(subjectId)} assigned to ${selectedTeacherData?.name}.` +
+        (hadOtherTeachers
+          ? " This subject now has more than one teacher. Open Class-wise Allotment to split its weekly periods."
+          : "")
     );
   }
 
   // ==========================================
-  // 8. CLASS-WISE TEACHER SELECTION
+  // 9. CLASS-WISE TEACHER SELECTION
   // ==========================================
 
   function isTeacherAssigned(teacherId) {
     return teacherMappings.some(
       (mapping) =>
         mapping.teacherId === teacherId &&
-        mapping.classId === selectedClass &&
-        mapping.sectionId === selectedSection &&
-        mapping.subjectId === selectedSubject
+        sameGroup(mapping, selectedClass, selectedSection, selectedSubject)
     );
   }
 
+  // Choosing a subject loads its current teachers and quotas, so saving edits
+  // the whole split instead of replacing it with only the new teachers.
+  function selectSubjectForClasswise(subjectId) {
+    const group = teacherMappings.filter((mapping) =>
+      sameGroup(mapping, selectedClass, selectedSection, subjectId)
+    );
+    const required = getWeeklyPeriods(selectedClass, subjectId);
+
+    setSelectedSubject(subjectId);
+    setSelectedTeachers(group.map((mapping) => mapping.teacherId));
+    setTeacherPeriodAllocations(
+      Object.fromEntries(
+        group.map((mapping) => [
+          mapping.teacherId,
+          Number(mapping.periodsAllocated) ||
+            (group.length === 1 ? required : 1) ||
+            1,
+        ])
+      )
+    );
+    setSearchAvailableTeacher("");
+    setNotice("");
+  }
+
   function toggleTeacherSelection(teacherId) {
-    if (isTeacherAssigned(teacherId)) {
+    const required = getSubjectWeeklyPeriods(selectedSubject);
+
+    if (selectedTeachers.includes(teacherId)) {
+      const remaining = selectedTeachers.filter((id) => id !== teacherId);
+
+      setSelectedTeachers(remaining);
+      setTeacherPeriodAllocations((previous) => {
+        const next = { ...previous };
+        delete next[teacherId];
+
+        if (remaining.length === 1 && required > 0) {
+          next[remaining[0]] = required;
+        }
+
+        return next;
+      });
+
       return;
     }
 
-    setSelectedTeachers((previous) =>
-      previous.includes(teacherId)
-        ? previous.filter((id) => id !== teacherId)
-        : [...previous, teacherId]
-    );
+    const updated = [...selectedTeachers, teacherId];
+
+    setSelectedTeachers(updated);
+    setTeacherPeriodAllocations((previous) => {
+      if (updated.length === 1) {
+        return { ...previous, [teacherId]: required || 1 };
+      }
+
+      return required >= updated.length
+        ? evenSplit(updated, required)
+        : { ...previous, [teacherId]: 1 };
+    });
+  }
+
+  function allocationValue(teacherId) {
+    const required = getSubjectWeeklyPeriods(selectedSubject);
+
+    if (selectedTeachers.length === 1 && required > 0) {
+      return required;
+    }
+
+    return teacherPeriodAllocations[teacherId] ?? 1;
+  }
+
+  function distributeEvenly() {
+    const required = getSubjectWeeklyPeriods(selectedSubject);
+
+    if (selectedTeachers.length < 2 || required < selectedTeachers.length) {
+      setNotice(
+        "Weekly periods must be at least the number of selected teachers."
+      );
+      return;
+    }
+
+    setTeacherPeriodAllocations(evenSplit(selectedTeachers, required));
   }
 
   function assignSelectedTeachers() {
@@ -274,45 +517,216 @@ export default function TeacherMapping({ project, onSave }) {
       return;
     }
 
-    if (selectedTeachers.length === 0) {
+    if (!selectedTeachers.length) {
       setNotice("Select at least one available teacher.");
       return;
     }
 
-    let addedCount = 0;
+    const required = getSubjectWeeklyPeriods(selectedSubject);
+    const isSplit = selectedTeachers.length > 1;
 
-    selectedTeachers.forEach((teacherId) => {
-      const added = addAssignment(
-        teacherId,
-        selectedClass,
-        selectedSection,
-        selectedSubject
+    if (isSplit && required === 0) {
+      setNotice(
+        "Set the weekly periods for this subject in the class-subject mapping before sharing it between teachers."
+      );
+      return;
+    }
+
+    const allocations = selectedTeachers.map((teacherId) =>
+      Number(allocationValue(teacherId))
+    );
+
+    if (isSplit) {
+      if (allocations.some((value) => !Number.isInteger(value) || value < 1)) {
+        setNotice("Give each selected teacher a whole number of weekly periods (at least 1).");
+        return;
+      }
+
+      const total = allocations.reduce((sum, value) => sum + value, 0);
+
+      if (total !== required) {
+        setNotice(
+          `Allocated periods total ${total}. It must equal the subject's ${required} weekly periods.`
+        );
+        return;
+      }
+    }
+
+    const existingGroup = teacherMappings.filter((mapping) =>
+      sameGroup(mapping, selectedClass, selectedSection, selectedSubject)
+    );
+
+    const newGroup = selectedTeachers.map((teacherId, index) => {
+      const existing = existingGroup.find(
+        (mapping) => mapping.teacherId === teacherId
       );
 
-      if (added) {
-        addedCount++;
-      }
+      return {
+        ...(existing || {
+          id: crypto.randomUUID(),
+          teacherId,
+          classId: selectedClass,
+          sectionId: selectedSection,
+          subjectId: selectedSubject,
+        }),
+        periodsAllocated: allocations[index],
+      };
     });
 
-    setSelectedTeachers([]);
+    const classId = selectedClass;
+    const sectionId = selectedSection;
+    const subjectId = selectedSubject;
+
+    setTeacherMappings((previous) =>
+      normalizeGroup(
+        [
+          ...previous.filter(
+            (mapping) => !sameGroup(mapping, classId, sectionId, subjectId)
+          ),
+          ...newGroup,
+        ],
+        classId,
+        sectionId,
+        subjectId
+      )
+    );
+
+    if (!isSplit) {
+      setTeacherPeriodAllocations({
+        [selectedTeachers[0]]: required || 1,
+      });
+    }
 
     setNotice(
-      addedCount > 0
-        ? `${addedCount} teacher(s) assigned successfully.`
-        : "No new assignments were added."
+      isSplit
+        ? `${getSubjectCode(subjectId)} split between ${newGroup.length} teachers. Weekly periods allocated: ${required}/${required}.`
+        : `${getSubjectName(subjectId)} assigned to ${getTeacherName(selectedTeachers[0])}.`
+    );
+  }
+
+  function renderAllocationPanel() {
+    const required = getSubjectWeeklyPeriods(selectedSubject);
+    const single = selectedTeachers.length === 1;
+    const total = selectedTeachers.reduce(
+      (sum, id) => sum + Number(allocationValue(id) || 0),
+      0
+    );
+    const balanced = single || (required > 0 && total === required);
+
+    return (
+      <div className="tm-period-allocation">
+        <div className="tm-subject-heading">
+          <ListChecks size={18} />
+          <h3>5. Split Weekly Periods Across Teachers</h3>
+        </div>
+
+        <p className="tm-instruction">
+          {required > 0 ? (
+            <>
+              Subject weekly periods: <strong>{required}</strong>. Subject
+              codes are generated automatically.
+            </>
+          ) : (
+            <>
+              Weekly periods are not set for this subject. Set them in the
+              class-subject mapping before sharing it between teachers.
+            </>
+          )}
+        </p>
+
+        <div className="tm-period-allocation-list">
+          {selectedTeachers.map((teacherId, index) => (
+            <div className="tm-period-allocation-row" key={teacherId}>
+              <span>
+                <strong>
+                  {getSubjectCode(selectedSubject)}-{index + 1}
+                </strong>{" "}
+                · {getTeacherName(teacherId)}
+              </span>
+
+              <label>
+                Weekly periods
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={allocationValue(teacherId)}
+                  disabled={single && required > 0}
+                  onChange={(event) =>
+                    setTeacherPeriodAllocations((previous) => ({
+                      ...previous,
+                      [teacherId]:
+                        event.target.value === ""
+                          ? ""
+                          : Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+
+        <p
+          className="tm-instruction"
+          style={balanced ? undefined : { color: "#b45309" }}
+        >
+          Allocated total:{" "}
+          <strong>
+            {total}/{required}
+          </strong>
+          {!balanced && required > 0 ? " — must equal the weekly periods" : ""}
+        </p>
+
+        {selectedTeachers.length > 1 && required >= selectedTeachers.length && (
+          <button type="button" className="assign" onClick={distributeEvenly}>
+            Split evenly
+          </button>
+        )}
+      </div>
     );
   }
 
   // ==========================================
-  // 9. REMOVE ASSIGNMENT
+  // 10. REMOVE ASSIGNMENT
   // ==========================================
 
   function removeAssignment(id) {
+    const target = teacherMappings.find((mapping) => mapping.id === id);
+
+    if (!target) return;
+
     setTeacherMappings((previous) =>
-      previous.filter((mapping) => mapping.id !== id)
+      normalizeGroup(
+        previous.filter((mapping) => mapping.id !== id),
+        target.classId,
+        target.sectionId,
+        target.subjectId
+      )
     );
 
-    setSelectedTeachers([]);
+    // Keep the class-wise selection in step when the removed teacher is in it.
+    if (
+      sameGroup(target, selectedClass, selectedSection, selectedSubject) &&
+      selectedTeachers.includes(target.teacherId)
+    ) {
+      const remaining = selectedTeachers.filter(
+        (teacherId) => teacherId !== target.teacherId
+      );
+      const required = getWeeklyPeriods(target.classId, target.subjectId);
+
+      setSelectedTeachers(remaining);
+      setTeacherPeriodAllocations((previous) => {
+        const next = { ...previous };
+        delete next[target.teacherId];
+
+        if (remaining.length === 1 && required > 0) {
+          next[remaining[0]] = required;
+        }
+
+        return next;
+      });
+    }
 
     setNotice("Assignment removed successfully.");
   }
@@ -331,6 +745,38 @@ export default function TeacherMapping({ project, onSave }) {
       mapping.sectionId === selectedSection &&
       mapping.subjectId === selectedSubject
   );
+
+  const incompleteSplits = (() => {
+    const seen = new Set();
+    const list = [];
+
+    teacherMappings.forEach((mapping) => {
+      if (!mapping.sectionId) return;
+      if (!classes.some((item) => item.id === mapping.classId)) return;
+      if (!subjects.some((item) => item.id === mapping.subjectId)) return;
+
+      const key = `${mapping.classId}::${mapping.sectionId}::${mapping.subjectId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      const status = getGroupStatus(
+        mapping.classId,
+        mapping.sectionId,
+        mapping.subjectId
+      );
+
+      if (!status.ok) {
+        list.push(
+          `${getClassName(mapping.classId)}-${getSectionName(
+            mapping.classId,
+            mapping.sectionId
+          )} ${getSubjectName(mapping.subjectId)}`
+        );
+      }
+    });
+
+    return list;
+  })();
 
   // ==========================================
   // 11. PAGE UI
@@ -377,6 +823,24 @@ export default function TeacherMapping({ project, onSave }) {
           >
             <X size={16} />
           </button>
+        </div>
+      )}
+
+      {incompleteSplits.length > 0 && (
+        <div
+          className="tm-notice"
+          role="alert"
+          style={{ borderColor: "#f59e0b", background: "#fffbeb", color: "#92400e" }}
+        >
+          <span>
+            {incompleteSplits.length} subject(s) have shared teachers whose
+            weekly periods do not add up to the subject total:{" "}
+            {incompleteSplits.slice(0, 3).join(", ")}
+            {incompleteSplits.length > 3
+              ? ` and ${incompleteSplits.length - 3} more`
+              : ""}
+            . Fix them in Class-wise Allotment.
+          </span>
         </div>
       )}
 
@@ -904,11 +1368,9 @@ export default function TeacherMapping({ project, onSave }) {
                               ? "selected"
                               : ""
                           }`}
-                          onClick={() => {
-                            setSelectedSubject(subject.id);
-                            setSelectedTeachers([]);
-                            setNotice("");
-                          }}
+                          onClick={() =>
+                            selectSubjectForClasswise(subject.id)
+                          }
                         >
 
                           <BookOpen size={17} />
@@ -955,7 +1417,7 @@ export default function TeacherMapping({ project, onSave }) {
 
                     <div className="tm-currently-assigned">
 
-                      <strong>Already assigned teachers</strong>
+                      <strong>Saved teachers for this subject</strong>
 
                       <div className="tm-assigned-teacher-list">
 
@@ -967,7 +1429,7 @@ export default function TeacherMapping({ project, onSave }) {
                           >
 
                             <span>
-                              {getTeacherName(mapping.teacherId)}
+                              {getTeacherName(mapping.teacherId)}{periodsLabel(mapping)}
                             </span>
 
                             <span className="tm-assigned-label">Assigned</span>
@@ -1022,16 +1484,13 @@ export default function TeacherMapping({ project, onSave }) {
                       return (
 
                         <label
-                          className={`tm-available-teacher ${
-                            assigned ? "already-assigned" : ""
-                          }`}
+                          className="tm-available-teacher"
                           key={teacher.id}
                         >
 
                           <input
                             type="checkbox"
-                            checked={assigned || checked}
-                            disabled={assigned}
+                            checked={checked}
                             onChange={() =>
                               toggleTeacherSelection(teacher.id)
                             }
@@ -1047,7 +1506,7 @@ export default function TeacherMapping({ project, onSave }) {
 
                           {assigned ? (
                             <span className="tm-assigned-label">
-                              Already assigned
+                              Assigned
                             </span>
                           ) : (
                             <span className="tm-available-label">
@@ -1069,6 +1528,8 @@ export default function TeacherMapping({ project, onSave }) {
 
                   </div>
 
+                  {selectedTeachers.length > 0 && renderAllocationPanel()}
+
                   {/* ASSIGN BUTTON */}
 
                   <div className="tm-bulk-actions">
@@ -1083,7 +1544,7 @@ export default function TeacherMapping({ project, onSave }) {
                       onClick={assignSelectedTeachers}
                     >
                       <UserPlus size={16} />
-                      Assign Selected Teachers
+                      Save Assignment
                     </button>
 
                   </div>
@@ -1174,7 +1635,8 @@ export default function TeacherMapping({ project, onSave }) {
                           mapping.sectionId
                         )}
                         {" • "}
-                        {getSubjectName(mapping.subjectId)}
+                        {getSubjectName(mapping.subjectId)} {mapping.subjectCode ? `(${mapping.subjectCode})` : ""}
+                        {periodsLabel(mapping)}
                       </span>
                     </div>
 
@@ -1261,11 +1723,11 @@ export default function TeacherMapping({ project, onSave }) {
 
                                 <div>
                                   <strong>
-                                    {getSubjectName(mapping.subjectId)}
+                                    {getSubjectName(mapping.subjectId)} {mapping.subjectCode ? `(${mapping.subjectCode})` : ""}
                                   </strong>
 
                                   <span>
-                                    {getTeacherName(mapping.teacherId)}
+                                    {getTeacherName(mapping.teacherId)}{periodsLabel(mapping)}
                                   </span>
                                 </div>
 
@@ -1317,11 +1779,11 @@ export default function TeacherMapping({ project, onSave }) {
 
                             <div>
                               <strong>
-                                {getSubjectName(mapping.subjectId)}
+                                {getSubjectName(mapping.subjectId)} {mapping.subjectCode ? `(${mapping.subjectCode})` : ""}
                               </strong>
 
                               <span>
-                                {getTeacherName(mapping.teacherId)}
+                                {getTeacherName(mapping.teacherId)}{periodsLabel(mapping)}
                               </span>
                             </div>
 

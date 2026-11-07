@@ -1,3 +1,6 @@
+/* =========================================================
+   Bell Schedule — complete stylesheet
+   ========================================================= */
 
 .bell-page {
   width: 100%;
@@ -16,12 +19,15 @@
   margin: 0 0 6px;
   font-size: 28px;
   font-weight: 700;
+  letter-spacing: -0.3px;
 }
 
 .bell-header p {
   margin: 0;
   color: #687386;
 }
+
+/* ---------------- Cards ---------------- */
 
 .bell-card {
   background: #ffffff;
@@ -34,7 +40,10 @@
 .bell-card h2 {
   font-size: 18px;
   margin: 0 0 20px;
+  font-weight: 700;
 }
+
+/* ---------------- Form grid ---------------- */
 
 .bell-grid {
   display: grid;
@@ -63,12 +72,21 @@
   color: #202938;
   font: inherit;
   font-weight: 400;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .bell-grid input:focus {
   outline: 2px solid #bfdbfe;
+  outline-offset: 1px;
   border-color: #2563eb;
 }
+
+.bell-grid input[type="time"],
+.bell-grid input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- Checkbox ---------------- */
 
 .bell-checkbox {
   display: flex;
@@ -81,11 +99,16 @@
 .bell-checkbox input {
   width: 17px;
   height: 17px;
+  accent-color: #1769d2;
+  cursor: pointer;
 }
 
 .bell-checkbox label {
   cursor: pointer;
+  font-weight: 500;
 }
+
+/* ---------------- Section headings inside cards ---------------- */
 
 .bell-section-heading,
 .break-item-heading {
@@ -98,6 +121,8 @@
 .bell-section-heading h2 {
   margin-bottom: 18px;
 }
+
+/* ---------------- Break items ---------------- */
 
 .break-item {
   padding: 18px;
@@ -115,6 +140,8 @@
   font-size: 15px;
 }
 
+/* ---------------- Buttons ---------------- */
+
 .bell-secondary-btn,
 .bell-remove-btn,
 .bell-generate-btn {
@@ -124,6 +151,7 @@
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .bell-secondary-btn {
@@ -141,6 +169,10 @@
   padding: 7px 12px;
 }
 
+.bell-remove-btn:hover {
+  background: #fdd8d8;
+}
+
 .bell-generate-btn {
   background: #1769d2;
   color: white;
@@ -152,11 +184,21 @@
   background: #1255ad;
 }
 
+.bell-secondary-btn:disabled,
+.bell-remove-btn:disabled,
+.bell-generate-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---------------- Messages ---------------- */
+
 .bell-message {
   padding: 13px 16px;
   border-radius: 8px;
   margin-bottom: 20px;
   font-size: 14px;
+  line-height: 1.5;
 }
 
 .bell-message.success {
@@ -171,6 +213,8 @@
   border: 1px solid #fecaca;
 }
 
+/* ---------------- Valid badge ---------------- */
+
 .bell-valid {
   color: #166534;
   background: #dcfce7;
@@ -179,6 +223,40 @@
   font-size: 12px;
   font-weight: 700;
 }
+
+/* ---------------- Print header (NEW) ---------------- */
+
+.bell-print-header {
+  text-align: center;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid #dbe5f5;
+}
+
+.bell-print-header h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.3px;
+  color: #172033;
+}
+
+.bell-print-header h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #475569;
+  text-transform: uppercase;
+}
+
+.bell-print-header p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* ---------------- Summary cards ---------------- */
 
 .bell-summary {
   display: grid;
@@ -205,10 +283,14 @@
   font-size: 19px;
 }
 
+/* ---------------- Table ---------------- */
+
 .bell-table-wrap {
   width: 100%;
   overflow-x: auto;
   margin-bottom: 20px;
+  border: 1px solid #e5e9f0;
+  border-radius: 9px;
 }
 
 .bell-table {
@@ -229,6 +311,13 @@
   background: #f3f6fa;
   color: #374151;
   font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.bell-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .bell-table .break-row {
@@ -237,8 +326,112 @@
   font-weight: 600;
 }
 
+.bell-table .assembly-row {
+  background: #eef2ff;
+  color: #1e3a8a;
+  font-weight: 700;
+}
+
 .bell-muted {
   color: #687386;
   font-size: 14px;
 }
 
+/* ---------------- Responsive ---------------- */
+
+@media (max-width: 640px) {
+  .bell-page {
+    padding: 16px;
+  }
+
+  .bell-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .bell-header h1 {
+    font-size: 22px;
+  }
+
+  .bell-card {
+    padding: 16px;
+    border-radius: 10px;
+  }
+
+  .bell-summary {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .bell-summary div {
+    padding: 12px;
+  }
+
+  .bell-summary strong {
+    font-size: 17px;
+  }
+
+  .bell-grid {
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .bell-table th,
+  .bell-table td {
+    padding: 10px 11px;
+    font-size: 13px;
+  }
+
+  .bell-generate-btn {
+    width: 100%;
+  }
+
+  .bell-print-header h1 {
+    font-size: 20px;
+  }
+}
+
+/* ---------------- Print ---------------- */
+
+@media print {
+  /* Hide chrome that shouldn't be on paper. */
+  .bell-no-print,
+  .bell-header,
+  .bell-generate-btn,
+  .bell-message,
+  .bell-card:not(.bell-print-card) {
+    display: none !important;
+  }
+
+  /* The print card prints full-width, clean. */
+  .bell-print-card {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    box-shadow: none;
+  }
+
+  .bell-table-wrap {
+    border-color: #999;
+  }
+
+  .bell-table th,
+  .bell-table td {
+    border-color: #555;
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+
+  /* Re-enable print header in case anything upstream hides it. */
+  .bell-print-header {
+    display: block;
+    border-color: #333;
+  }
+
+  .bell-print-header h1 { color: #111; }
+  .bell-print-header h2 { color: #333; }
+  .bell-print-header p  { color: #555; }
+
+  .bell-valid { display: none !important; }
+}

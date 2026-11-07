@@ -258,10 +258,13 @@ function handleCatalogueSelection(name) {
   }
 }
 function updatePeriodValue(classId, value) {
-  setPeriodValues((previous) => ({
-    ...previous,
-    [classId]: value,
-  }));
+  if (value === "") {
+    setPeriodValues((previous) => ({ ...previous, [classId]: "" }));
+    return;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return;
+  setPeriodValues((previous) => ({ ...previous, [classId]: Math.floor(n) }));
 }
 
 function toggleClassSelection(classId) {

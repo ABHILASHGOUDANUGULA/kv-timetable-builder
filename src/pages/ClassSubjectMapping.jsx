@@ -106,12 +106,13 @@ useEffect(() => {
   }
 
   function updatePeriodValue(classId, value) {
-  const periods = Math.max(0, Number(value) || 0);
-
-  setPeriodValues((previous) => ({
-    ...previous,
-    [classId]: periods,
-  }));
+  if (value === "") {
+    setPeriodValues((previous) => ({ ...previous, [classId]: "" }));
+    return;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return;
+  setPeriodValues((previous) => ({ ...previous, [classId]: Math.floor(n) }));
 }
   function selectAllClasses() {
     setSelectedClassIds(filteredClasses.map((item) => item.id));

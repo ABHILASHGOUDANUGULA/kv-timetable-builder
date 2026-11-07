@@ -1,9 +1,14 @@
+/* =========================================================
+   School Setup — complete stylesheet
+   ========================================================= */
 
 .school-setup-page {
   max-width: 1100px;
   margin: 0 auto;
   padding: 36px;
 }
+
+/* ---------------- Header ---------------- */
 
 .setup-header {
   display: flex;
@@ -25,6 +30,7 @@
   font-size: 26px;
   margin: 0;
   color: #20243a;
+  letter-spacing: -0.3px;
 }
 
 .setup-header p {
@@ -33,22 +39,37 @@
   margin-top: 8px;
 }
 
+/* ---------------- Save indicator ---------------- */
+
 .save-indicator {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   color: #269875;
-  font-size: 12px;
   background: #eaf8f1;
   padding: 9px 13px;
   border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease;
 }
+
+/* Amber state while the debounced save is in flight. */
+.save-indicator.saving,
+.save-indicator[data-status="saving"] {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+/* ---------------- Progress ---------------- */
 
 .setup-progress {
   height: 6px;
   background: #e8e7f1;
   border-radius: 10px;
   margin-bottom: 25px;
+  overflow: hidden;
 }
 
 .setup-progress-active {
@@ -56,10 +77,13 @@
   height: 100%;
   background: #6051d7;
   border-radius: 10px;
+  transition: width 0.3s ease;
 }
 
+/* ---------------- Card ---------------- */
+
 .setup-card {
-  background: white;
+  background: #ffffff;
   border: 1px solid #e9eaf0;
   border-radius: 13px;
   padding: 25px;
@@ -81,11 +105,13 @@
   color: #5c50d3;
   background: #f0eeff;
   border-radius: 10px;
+  flex-shrink: 0;
 }
 
 .setup-card-heading h2 {
   font-size: 15px;
   margin: 0;
+  color: #20243a;
 }
 
 .setup-card-heading p {
@@ -94,10 +120,16 @@
   margin: 5px 0 0;
 }
 
+/* ---------------- Form grid ---------------- */
+
 .setup-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+}
+
+.full-width {
+  grid-column: 1 / -1;
 }
 
 .setup-field {
@@ -117,13 +149,15 @@
 .setup-field select,
 .setup-field textarea {
   width: 100%;
+  box-sizing: border-box;
   border: 1px solid #dedfea;
   border-radius: 8px;
   padding: 12px;
-  background: white;
+  background: #fff;
   color: #303449;
   font-size: 12px;
   font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .setup-field input,
@@ -132,19 +166,26 @@
 }
 
 .setup-field textarea {
+  min-height: 80px;
+  height: auto;
   resize: vertical;
+  line-height: 1.5;
 }
 
 .setup-field input:focus,
 .setup-field select:focus,
 .setup-field textarea:focus {
   outline: 2px solid #e4e0ff;
+  outline-offset: 1px;
   border-color: #7465e0;
 }
 
-.full-width {
-  grid-column: 1 / -1;
+.setup-field input[type="number"],
+.setup-field input[type="text"][inputmode="numeric"] {
+  font-variant-numeric: tabular-nums;
 }
+
+/* ---------------- Working days ---------------- */
 
 .working-days {
   display: flex;
@@ -159,20 +200,39 @@
   padding: 11px 14px;
   border: 1px solid #e2e2ed;
   border-radius: 8px;
+  background: #fff;
   color: #70748a;
   font-size: 12px;
   cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.day-option:hover {
+  border-color: #bdb5ff;
+  color: #5548ce;
+  background: #f7f5ff;
+}
+
+.day-option:focus-within {
+  outline: 2px solid #e4e0ff;
+  outline-offset: 1px;
+  border-color: #7465e0;
 }
 
 .day-option input {
   accent-color: #6051d7;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
 }
 
-.day-selected {
+.day-option.day-selected {
   background: #f1efff;
   border-color: #bdb5ff;
   color: #5548ce;
 }
+
+/* ---------------- Bottom action bar ---------------- */
 
 .setup-bottom {
   display: flex;
@@ -199,29 +259,65 @@
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.setup-back-button:focus-visible,
+.setup-save-button:focus-visible,
+.setup-continue-button:focus-visible {
+  outline: 2px solid #5d50d8;
+  outline-offset: 2px;
+}
+
+.setup-back-button:disabled,
+.setup-save-button:disabled,
+.setup-continue-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .setup-back-button {
   border: 1px solid #e3e3ec;
-  background: white;
+  background: #fff;
   color: #656a7d;
+}
+
+.setup-back-button:hover:not(:disabled) {
+  border-color: #c7c8d6;
+  background: #f6f6fa;
+  color: #4a4f61;
 }
 
 .setup-save-button {
   border: 1px solid #dcdbea;
-  background: white;
+  background: #fff;
   color: #5a50b8;
+}
+
+.setup-save-button:hover:not(:disabled) {
+  border-color: #bdb5ff;
+  background: #f7f5ff;
+  color: #493bc2;
 }
 
 .setup-continue-button {
   border: 1px solid #5d50d8;
   background: #5d50d8;
-  color: white;
+  color: #fff;
 }
 
-.setup-continue-button:hover {
+.setup-continue-button:hover:not(:disabled) {
   background: #493bc2;
+  border-color: #493bc2;
 }
+
+.setup-back-button:active:not(:disabled),
+.setup-save-button:active:not(:disabled),
+.setup-continue-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* ---------------- Responsive ---------------- */
 
 @media (max-width: 700px) {
   .school-setup-page {
@@ -252,5 +348,78 @@
 
   .setup-bottom-right {
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .setup-header h1 {
+    font-size: 22px;
+  }
+
+  .setup-bottom-right {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .setup-back-button,
+  .setup-save-button,
+  .setup-continue-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ---------------- Reduced motion ---------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .setup-progress-active,
+  .setup-back-button,
+  .setup-save-button,
+  .setup-continue-button,
+  .day-option,
+  .save-indicator {
+    transition: none;
+  }
+
+  .setup-back-button:active,
+  .setup-save-button:active,
+  .setup-continue-button:active {
+    transform: none;
+  }
+}
+
+/* ---------------- Print ---------------- */
+
+@media print {
+  .school-setup-page {
+    padding: 0;
+    max-width: none;
+  }
+
+  .save-indicator,
+  .setup-progress,
+  .setup-bottom,
+  .setup-bottom-right,
+  .setup-back-button,
+  .setup-save-button,
+  .setup-continue-button {
+    display: none !important;
+  }
+
+  .setup-card {
+    border-color: #999;
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .setup-field input,
+  .setup-field select,
+  .setup-field textarea {
+    border: 1px solid #ccc;
+    background: #fafafa;
+  }
+
+  .day-option {
+    border-color: #ccc;
   }
 }

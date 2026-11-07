@@ -1,10 +1,24 @@
+/* =====================================================
+   TEACHER MAPPING — complete stylesheet
+   ===================================================== */
 
 .teacher-mapping-page {
+  --tm-primary: #4f46e5;
+  --tm-primary-dark: #4338ca;
+  --tm-primary-light: #eef2ff;
+  --tm-focus: #6366f1;
+  --tm-focus-ring: rgba(99, 102, 241, 0.2);
+  --tm-ink: #172033;
+  --tm-muted: #64748b;
+  --tm-line: #e5eaf2;
+
   padding: 30px;
   max-width: 1450px;
   margin: 0 auto;
-  color: #172033;
+  color: var(--tm-ink);
 }
+
+/* ---------------- Header ---------------- */
 
 .tm-heading {
   display: flex;
@@ -15,7 +29,7 @@
 }
 
 .tm-eyebrow {
-  color: #64748b;
+  color: var(--tm-muted);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 1.3px;
@@ -25,11 +39,12 @@
   margin: 7px 0;
   font-size: 28px;
   font-weight: 750;
+  letter-spacing: -0.3px;
 }
 
 .tm-heading p {
   margin: 0;
-  color: #64748b;
+  color: var(--tm-muted);
   font-size: 14px;
 }
 
@@ -38,9 +53,10 @@
   align-items: center;
   gap: 12px;
   padding: 14px 20px;
-  background: #eef2ff;
-  color: #4338ca;
+  background: var(--tm-primary-light);
+  color: var(--tm-primary-dark);
   border-radius: 12px;
+  white-space: nowrap;
 }
 
 .tm-total div {
@@ -51,11 +67,14 @@
 
 .tm-total strong {
   font-size: 21px;
+  font-variant-numeric: tabular-nums;
 }
 
 .tm-total span {
   font-size: 12px;
 }
+
+/* ---------------- Notice (with variants) ---------------- */
 
 .tm-notice {
   display: flex;
@@ -69,15 +88,45 @@
   border: 1px solid #bfdbfe;
   border-radius: 9px;
   font-size: 13px;
+  line-height: 1.5;
+}
+
+.tm-notice.warning {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.tm-notice.error {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #991b1b;
+}
+
+.tm-notice.success {
+  background: #f0fdf4;
+  border-color: #22c55e;
+  color: #166534;
 }
 
 .tm-notice button {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
   border: 0;
+  border-radius: 4px;
   background: transparent;
   color: inherit;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
+
+.tm-notice button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* ---------------- Layout ---------------- */
 
 .tm-layout {
   display: grid;
@@ -86,10 +135,12 @@
   align-items: start;
 }
 
+/* ---------------- Panel ---------------- */
+
 .tm-panel {
   padding: 22px;
   background: #ffffff;
-  border: 1px solid #e5eaf2;
+  border: 1px solid var(--tm-line);
   border-radius: 13px;
   box-shadow: 0 3px 12px rgba(15, 23, 42, 0.035);
 }
@@ -99,16 +150,19 @@
   align-items: center;
   gap: 10px;
   margin-bottom: 18px;
-  color: #4338ca;
+  color: var(--tm-primary-dark);
 }
 
 .tm-panel-heading h2,
-.tm-subject-heading h2 {
+.tm-subject-heading h2,
+.tm-subject-heading h3 {
   margin: 0;
-  color: #172033;
+  color: var(--tm-ink);
   font-size: 16px;
   font-weight: 700;
 }
+
+/* ---------------- Search ---------------- */
 
 .tm-search {
   display: flex;
@@ -119,6 +173,13 @@
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   color: #94a3b8;
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tm-search:focus-within {
+  border-color: var(--tm-focus);
+  box-shadow: 0 0 0 3px var(--tm-focus-ring);
 }
 
 .tm-search input {
@@ -126,9 +187,11 @@
   border: 0;
   outline: none;
   background: transparent;
-  color: #172033;
+  color: var(--tm-ink);
   font-size: 13px;
 }
+
+/* ---------------- Lists ---------------- */
 
 .tm-teacher-list,
 .tm-class-list,
@@ -138,6 +201,8 @@
   flex-direction: column;
   gap: 9px;
 }
+
+/* ---------------- Teacher / class options ---------------- */
 
 .tm-teacher-option,
 .tm-class-option {
@@ -152,7 +217,7 @@
   color: #334155;
   text-align: left;
   cursor: pointer;
-  transition: 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .tm-teacher-option:hover,
@@ -161,11 +226,23 @@
   background: #f8faff;
 }
 
+.tm-teacher-option:focus-visible,
+.tm-class-option:focus-visible,
+.tm-mode-option:focus-visible,
+.tm-review-tabs button:focus-visible,
+.tm-remove:focus-visible,
+.tm-bulk-actions button:focus-visible,
+.tm-subject-option button:focus-visible,
+.tm-period-allocation .assign:focus-visible {
+  outline: 2px solid var(--tm-primary);
+  outline-offset: 2px;
+}
+
 .tm-teacher-option.selected,
 .tm-class-option.selected {
-  border-color: #6366f1;
-  background: #eef2ff;
-  color: #4338ca;
+  border-color: var(--tm-focus);
+  background: var(--tm-primary-light);
+  color: var(--tm-primary-dark);
 }
 
 .tm-teacher-name {
@@ -173,6 +250,8 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+/* ---------------- Avatar ---------------- */
 
 .tm-avatar {
   display: flex;
@@ -183,10 +262,12 @@
   height: 34px;
   border-radius: 9px;
   background: #e0e7ff;
-  color: #4338ca;
+  color: var(--tm-primary-dark);
   font-size: 14px;
   font-weight: 750;
 }
+
+/* ---------------- Selected teacher badge ---------------- */
 
 .tm-selected-teacher {
   display: flex;
@@ -209,7 +290,7 @@
 }
 
 .tm-selected-teacher span:not(.tm-avatar) {
-  color: #64748b;
+  color: var(--tm-muted);
   font-size: 11px;
 }
 
@@ -222,13 +303,17 @@
   flex: 1;
 }
 
+/* ---------------- Section heading (subject etc.) ---------------- */
+
 .tm-subject-heading {
   display: flex;
   align-items: center;
   gap: 9px;
   margin: 23px 0 13px;
-  color: #4338ca;
+  color: var(--tm-primary-dark);
 }
+
+/* ---------------- Subject option + review item ---------------- */
 
 .tm-subject-option,
 .tm-review-item {
@@ -257,11 +342,14 @@
 .tm-subject-option span,
 .tm-review-item span {
   font-size: 11px;
-  color: #64748b;
+  color: var(--tm-muted);
 }
 
+/* ---------------- Assign / remove buttons ---------------- */
+
 .tm-subject-option button,
-.tm-remove {
+.tm-remove,
+.tm-period-allocation .assign {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -271,23 +359,27 @@
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-.tm-subject-option button.assign {
-  border: 0;
-  background: #4f46e5;
+.tm-subject-option button.assign,
+.tm-period-allocation .assign {
+  border: 1px solid var(--tm-primary);
+  background: var(--tm-primary);
   color: #ffffff;
+}
+
+.tm-subject-option button.assign:hover:not(:disabled),
+.tm-period-allocation .assign:hover:not(:disabled) {
+  background: var(--tm-primary-dark);
+  border-color: var(--tm-primary-dark);
 }
 
 .tm-subject-option button.assigned {
   border: 1px solid #bbf7d0;
   background: #f0fdf4;
   color: #15803d;
-  cursor: default;
-}
-
-.tm-review-panel {
-  margin-top: 20px;
+  cursor: not-allowed;
 }
 
 .tm-remove {
@@ -296,13 +388,26 @@
   color: #dc2626;
 }
 
+.tm-remove:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* ---------------- Instructions / muted ---------------- */
+
 .tm-instruction,
 .tm-muted {
   margin: 8px 0;
-  color: #64748b;
+  color: var(--tm-muted);
   font-size: 13px;
   line-height: 1.6;
 }
+
+.tm-instruction.warning {
+  color: #b45309;
+}
+
+/* ---------------- Empty state ---------------- */
 
 .tm-empty {
   padding: 55px 25px;
@@ -310,12 +415,12 @@
   background: #ffffff;
   border: 1px dashed #cbd5e1;
   border-radius: 13px;
-  color: #64748b;
+  color: var(--tm-muted);
 }
 
 .tm-empty h3 {
   margin: 12px 0 7px;
-  color: #172033;
+  color: var(--tm-ink);
 }
 
 .tm-empty p {
@@ -325,41 +430,13 @@
   line-height: 1.6;
 }
 
-@media (max-width: 850px) {
-  .tm-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 600px) {
-  .teacher-mapping-page {
-    padding: 18px 13px;
-  }
-
-  .tm-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .tm-heading h1 {
-    font-size: 23px;
-  }
-
-  .tm-panel {
-    padding: 16px;
-  }
-
-  .tm-review-item {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
+/* ---------------- Review tabs ---------------- */
 
 .tm-review-tabs {
   display: flex;
   gap: 8px;
   margin-bottom: 18px;
-  border-bottom: 1px solid #e5eaf2;
+  border-bottom: 1px solid var(--tm-line);
 }
 
 .tm-review-tabs button {
@@ -367,20 +444,27 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: #64748b;
+  color: var(--tm-muted);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tm-review-tabs button:hover {
+  color: var(--tm-primary-dark);
 }
 
 .tm-review-tabs button.active {
-  border-bottom-color: #4f46e5;
-  color: #4338ca;
+  border-bottom-color: var(--tm-primary);
+  color: var(--tm-primary-dark);
 }
+
+/* ---------------- Class review list ---------------- */
 
 .tm-class-review {
   padding: 15px 0;
-  border-bottom: 1px solid #e5eaf2;
+  border-bottom: 1px solid var(--tm-line);
 }
 
 .tm-class-review:last-child {
@@ -393,9 +477,30 @@
   color: #334155;
 }
 
-/* =========================================
+/* ---------------- Section review ---------------- */
+
+.tm-section-review {
+  margin-top: 18px;
+  padding: 15px;
+  border: 1px solid var(--tm-line);
+  border-radius: 10px;
+}
+
+.tm-section-review h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #334155;
+}
+
+/* ---------------- Review panel ---------------- */
+
+.tm-review-panel {
+  margin-top: 20px;
+}
+
+/* =====================================================
    ALLOTMENT MODE SELECTOR
-========================================= */
+   ===================================================== */
 
 .tm-mode-panel {
   margin-bottom: 22px;
@@ -407,18 +512,19 @@
   gap: 14px;
 }
 
+/* Base border is 2px, active only changes colour — no layout shift. */
 .tm-mode-option {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 18px;
-  border: 1px solid #e2e8f0;
+  padding: 17px;
+  border: 2px solid #e2e8f0;
   border-radius: 12px;
   background: #fff;
   color: #334155;
   text-align: left;
   cursor: pointer;
-  transition: 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 .tm-mode-option > svg:first-child {
@@ -438,7 +544,7 @@
 
 .tm-mode-option span {
   font-size: 12px;
-  color: #64748b;
+  color: var(--tm-muted);
   line-height: 1.5;
 }
 
@@ -448,14 +554,14 @@
 }
 
 .tm-mode-option.active {
-  border: 2px solid #4f46e5;
-  background: #eef2ff;
+  border-color: var(--tm-primary);
+  background: var(--tm-primary-light);
   color: #3730a3;
 }
 
-/* =========================================
+/* =====================================================
    CLASS-WISE ALLOTMENT
-========================================= */
+   ===================================================== */
 
 .tm-classwise-panel {
   margin-bottom: 22px;
@@ -464,7 +570,7 @@
 .tm-classwise-step {
   margin-top: 24px;
   padding-top: 18px;
-  border-top: 1px solid #e5eaf2;
+  border-top: 1px solid var(--tm-line);
 }
 
 .tm-classwise-step h3 {
@@ -472,6 +578,8 @@
   font-size: 15px;
   color: #334155;
 }
+
+/* ---------------- Assigned teacher banner ---------------- */
 
 .tm-currently-assigned {
   margin: 16px 0;
@@ -499,16 +607,20 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 9px;
+  padding: 9px 11px;
   background: #fff;
+  border: 1px solid #d1fae5;
   border-radius: 7px;
 }
 
 .tm-assigned-teacher > span:first-child {
   flex: 1;
+  min-width: 180px;
   font-size: 13px;
   font-weight: 600;
 }
+
+/* ---------------- Available teachers ---------------- */
 
 .tm-available-teachers {
   display: flex;
@@ -526,6 +638,7 @@
   border-radius: 9px;
   cursor: pointer;
   background: #fff;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .tm-available-teacher:hover {
@@ -533,19 +646,15 @@
   border-color: #cbd5e1;
 }
 
-.tm-available-teacher input {
+.tm-available-teacher input[type="checkbox"] {
   width: 17px;
   height: 17px;
   cursor: pointer;
+  accent-color: var(--tm-primary);
 }
 
 .tm-available-teacher .tm-teacher-name {
   flex: 1;
-}
-
-.tm-available-teacher.already-assigned {
-  background: #f0fdf4;
-  cursor: default;
 }
 
 .tm-assigned-label {
@@ -555,9 +664,11 @@
 }
 
 .tm-available-label {
-  color: #64748b;
+  color: var(--tm-muted);
   font-size: 12px;
 }
+
+/* ---------------- Bulk actions ---------------- */
 
 .tm-bulk-actions {
   display: flex;
@@ -567,13 +678,14 @@
   flex-wrap: wrap;
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #e5eaf2;
+  border-top: 1px solid var(--tm-line);
 }
 
 .tm-bulk-actions > span {
-  color: #64748b;
+  color: var(--tm-muted);
   font-size: 13px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .tm-bulk-actions button {
@@ -583,10 +695,15 @@
   padding: 11px 17px;
   border: none;
   border-radius: 8px;
-  background: #4f46e5;
+  background: var(--tm-primary);
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.tm-bulk-actions button:hover:not(:disabled) {
+  background: var(--tm-primary-dark);
 }
 
 .tm-bulk-actions button:disabled {
@@ -594,9 +711,9 @@
   cursor: not-allowed;
 }
 
-/* =========================================
-   CLASS-WISE SUBJECT SELECTION
-========================================= */
+/* =====================================================
+   CLASS-WISE SUBJECT LIST (existing structure)
+   ===================================================== */
 
 .tm-classwise-step .tm-subject-list {
   display: flex;
@@ -608,26 +725,110 @@
   width: 100%;
 }
 
-/* =========================================
-   SECTION REVIEW
-========================================= */
+/* =====================================================
+   PERIOD ALLOCATION PANEL  ← Was completely missing
+   Rendered by renderAllocationPanel() in the JSX.
+   ===================================================== */
 
-.tm-section-review {
-  margin-top: 18px;
-  padding: 15px;
-  border: 1px solid #e5eaf2;
+.tm-period-allocation {
+  margin: 18px 0 6px;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid var(--tm-line);
   border-radius: 10px;
 }
 
-.tm-section-review h4 {
-  margin: 0 0 12px;
-  font-size: 14px;
+.tm-period-allocation .tm-subject-heading {
+  margin: 0 0 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--tm-line);
+}
+
+.tm-period-allocation .tm-instruction {
+  margin: 6px 0 12px;
+}
+
+.tm-period-allocation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tm-period-allocation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.tm-period-allocation-row > span {
+  flex: 1;
+  min-width: 160px;
+  font-size: 13px;
   color: #334155;
 }
 
-/* =========================================
+.tm-period-allocation-row > span strong {
+  color: var(--tm-primary-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.tm-period-allocation-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--tm-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tm-period-allocation-row input[type="number"] {
+  width: 74px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--tm-ink);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tm-period-allocation-row input[type="number"]:focus {
+  outline: none;
+  border-color: var(--tm-focus);
+  box-shadow: 0 0 0 3px var(--tm-focus-ring);
+}
+
+.tm-period-allocation-row input[type="number"]:disabled {
+  background: #f1f5f9;
+  color: #475569;
+  cursor: not-allowed;
+}
+
+/* The "Split evenly" button sits outside .tm-subject-option — restyle it here. */
+.tm-period-allocation .assign {
+  margin-top: 12px;
+}
+
+/* =====================================================
    RESPONSIVE
-========================================= */
+   ===================================================== */
+
+@media (max-width: 850px) {
+  .tm-layout {
+    grid-template-columns: 1fr;
+  }
+}
 
 @media (max-width: 700px) {
   .tm-mode-options {
@@ -641,5 +842,116 @@
 
   .tm-bulk-actions button {
     justify-content: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .teacher-mapping-page {
+    padding: 18px 13px;
+  }
+
+  .tm-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tm-heading h1 {
+    font-size: 23px;
+  }
+
+  .tm-panel {
+    padding: 16px;
+  }
+
+  .tm-review-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .tm-period-allocation-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .tm-period-allocation-row label {
+    justify-content: space-between;
+  }
+
+  .tm-period-allocation-row input[type="number"] {
+    width: 100%;
+  }
+
+  .tm-period-allocation .assign {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .tm-assigned-teacher {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tm-assigned-teacher > span:first-child {
+    min-width: 0;
+  }
+}
+
+/* =====================================================
+   REDUCED MOTION
+   ===================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .teacher-mapping-page *,
+  .teacher-mapping-page *::before,
+  .teacher-mapping-page *::after {
+    transition: none !important;
+  }
+}
+
+/* =====================================================
+   PRINT
+   ===================================================== */
+
+@media print {
+  .teacher-mapping-page {
+    padding: 0;
+    max-width: none;
+  }
+
+  .tm-heading,
+  .tm-total,
+  .tm-notice,
+  .tm-mode-panel,
+  .tm-search,
+  .tm-bulk-actions,
+  .tm-available-teachers,
+  .tm-remove,
+  .tm-review-tabs,
+  .tm-period-allocation .assign {
+    display: none !important;
+  }
+
+  .tm-panel,
+  .tm-section-review,
+  .tm-class-review {
+    border-color: #999;
+    box-shadow: none;
+    break-inside: avoid;
+  }
+
+  .tm-period-allocation,
+  .tm-period-allocation-row,
+  .tm-currently-assigned,
+  .tm-assigned-teacher {
+    background: #f9fafb;
+    border-color: #ccc;
+  }
+
+  .tm-period-allocation-row input[type="number"] {
+    border: 1px solid #ccc;
+    background: #f1f5f9;
   }
 }
