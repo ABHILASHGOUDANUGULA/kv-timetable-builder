@@ -955,3 +955,134 @@
     background: #f1f5f9;
   }
 }
+
+/* =========================================================
+   Additional selectors verified against TeacherMapping JSX
+   ========================================================= */
+
+.tm-assignment-panel,
+.tm-teacher-panel {
+  min-width: 0;
+  height: fit-content;
+}
+
+.tm-assignment-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tm-teacher-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.tm-section-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 9px;
+  margin: 10px 0 16px;
+}
+
+.tm-section-selector button,
+.tm-section-selector .tm-class-option {
+  min-width: 0;
+}
+
+.tm-section-subjects {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 14px;
+}
+
+.tm-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 11px;
+  border-radius: 999px;
+  color: #64748b;
+  background: #f1f5f9;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tm-save-status.success,
+.tm-save-status.saved {
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.tm-save-status.saving {
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.tm-save-status.error {
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.tm-section-selector button.active,
+.tm-section-selector button.selected,
+.tm-section-subjects .tm-subject-option.selected {
+  border-color: var(--tm-focus);
+  background: var(--tm-primary-light);
+  color: var(--tm-primary-dark);
+}
+
+.tm-section-subjects .tm-subject-option {
+  min-width: 0;
+}
+
+.tm-section-subjects .tm-subject-option > div {
+  min-width: 0;
+}
+
+.tm-section-subjects .tm-subject-option strong,
+.tm-section-subjects .tm-subject-option span {
+  overflow-wrap: anywhere;
+}
+
+.tm-assignment-panel .tm-bulk-actions {
+  margin-top: 14px;
+}
+
+.tm-teacher-panel .tm-selected-teacher {
+  min-width: 0;
+}
+
+.tm-teacher-panel .tm-teacher-list {
+  min-width: 0;
+}
+
+@media (max-width: 850px) {
+  .tm-assignment-panel,
+  .tm-teacher-panel {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .tm-section-selector {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tm-section-subjects .tm-subject-option {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tm-section-subjects .tm-subject-option button {
+    width: 100%;
+  }
+
+  .tm-save-status {
+    white-space: normal;
+  }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   CalendarDays,
@@ -21,6 +21,7 @@ import {
   GraduationCap,
   ClipboardList,
   Save,
+  Trash2,
 } from "lucide-react";
 
 import SchoolSetup from "./SchoolSetup";
@@ -31,6 +32,45 @@ import TeacherLibrary from "./TeacherLibrary";
 import TeacherMapping from "./TeacherMapping";
 import TimetableBuilder from "./TimetableBuilder";
 import "../styles/dashboard.css";
+
+// ---------------- Helpers ----------------
+
+function createId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
+}
+
+/** Every project is guaranteed to have this shape. */
+const DEFAULT_DATA = () => ({
+  school: {},
+  bellSchedule: {},
+  classes: [],
+  subjects: [],
+  teachers: [],
+  mappings: [],
+  teacherMappings: [],
+  allocations: [],
+  timetable: [],
+  substitutions: [],
+  timetableSettings: {},
+});
+
+function normalizeProject(project) {
+  if (!project || typeof project !== "object") return null;
+  if (!project.id || typeof project.id !== "string") return null;
+
+  return {
+    ...project,
+    schoolName: String(project.schoolName || "").trim(),
+    academicYear: String(project.academicYear || "2026-27"),
+    status: project.status || "Draft",
+    updatedAt: project.updatedAt || new Date().toISOString(),
+    createdAt: project.createdAt || new Date().toISOString(),
+    data: { ...DEFAULT_DATA(), ...(project.data || {}) },
+  };
+}
 
 // ---------------- Constants ----------------
 
@@ -61,7 +101,6 @@ const steps = [
   "Timetable Builder",
 ];
 
-// Pages that are fully implemented (no "coming soon" notice).
 const IMPLEMENTED_PAGES = new Set([
   "School Setup",
   "Bell Schedule",
@@ -72,28 +111,19 @@ const IMPLEMENTED_PAGES = new Set([
   "Timetable Builder",
 ]);
 
-// Pages that render their own content and must hide the dashboard body.
-const BUILDER_PAGES = new Set([
-  "School Setup",
-  "Bell Schedule",
-  "Classes & Sections",
-  "Subjects",
-  "Teachers",
-  "Teacher Mapping",
-  "Timetable Builder",
-]);
+const BUILDER_PAGES = IMPLEMENTED_PAGES;
+const PROJECT_PAGES = IMPLEMENTED_PAGES;
 
-// Pages that require a selected project.
-const PROJECT_PAGES = BUILDER_PAGES;
-
-// ---------------- Helpers ----------------
+// ---------------- Storage ----------------
 
 function readProjects() {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) return [];
-    const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : [];
+    if (typeof window === "undefined" || !window.localStorage) return [];
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeProject).filter(Boolean);
   } catch (error) {
     console.error("Unable to read projects:", error);
     return [];
@@ -109,7 +139,12 @@ export default function Dashboard() {
   const [mobileMenu, setMobileMenu] = useState(false);
 
   const [activePage, setActivePage] = useState(() => {
-    return localStorage.getItem(ACTIVE_PAGE_KEY) || "Dashboard";
+    try {
+      const saved = window.localStorage?.getItem(ACTIVE_PAGE_KEY);
+      return typeof saved === "string" && saved ? saved : "Dashboard";
+    } catch {
+      return "Dashboard";
+    }
   });
 
   const [notice, setNotice] = useState("");
@@ -118,38 +153,70 @@ export default function Dashboard() {
   const [schoolName, setSchoolName] = useState("");
   const [academicYear, setAcademicYear] = useState("2026-27");
 
-  // Auto-select the saved project, or fall back to the most recent one.
-  const [selectedProject, setSelectedProject] = useState(() => {
-    const savedId = localStorage.getItem(SELECTED_PROJECT_KEY);
-    const found = projects.find((project) => project.id === savedId);
-    if (found) return found;
-    return projects.length ? projects[0] : null;
+  // ---------------- Selected project (derived) ----------------
+  //
+  // We store only the selected id and derive the project from `projects`.
+  // This removes an entire class of "selectedProject drifted from projects"
+  // bugs — any update to `projects` immediately propagates to `selectedProject`.
+
+  const [selectedProjectId, setSelectedProjectId] = useState(() => {
+    try {
+      const savedId = window.localStorage?.getItem(SELECTED_PROJECT_KEY);
+      if (savedId && projects.some((p) => p.id === savedId)) return savedId;
+    } catch (error) {
+      console.error("Unable to read selected project:", error);
+    }
+    return projects.length ? projects[0].id : null;
   });
+
+  const selectedProject = useMemo(
+    () => projects.find((p) => p.id === selectedProjectId) || null,
+    [projects, selectedProjectId]
+  );
 
   // ---------------- Persistence effects ----------------
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+      if (typeof window === "undefined" || !window.localStorage) return;
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
       setSaveStatus("saved");
     } catch (error) {
       console.error("Unable to save projects:", error);
       setSaveStatus("error");
-      setNotice("Unable to save. Browser storage may be full.");
+      setNotice(
+        "Unable to save. Browser storage may be full. Download a backup now."
+      );
     }
   }, [projects]);
 
   useEffect(() => {
-    if (selectedProject?.id) {
-      localStorage.setItem(SELECTED_PROJECT_KEY, selectedProject.id);
+    if (selectedProjectId) {
+      try {
+        window.localStorage?.setItem(SELECTED_PROJECT_KEY, selectedProjectId);
+      } catch (error) {
+        console.error("Unable to save selected project:", error);
+      }
     } else {
-      localStorage.removeItem(SELECTED_PROJECT_KEY);
+      window.localStorage?.removeItem(SELECTED_PROJECT_KEY);
     }
-  }, [selectedProject?.id]);
+  }, [selectedProjectId]);
 
   useEffect(() => {
-    localStorage.setItem(ACTIVE_PAGE_KEY, activePage);
+    try {
+      window.localStorage?.setItem(ACTIVE_PAGE_KEY, activePage);
+    } catch (error) {
+      console.error("Unable to save active page:", error);
+    }
   }, [activePage]);
+
+  // Guard: if the selected project disappeared, clear the id so the empty
+  // state shows instead of a stale reference.
+  useEffect(() => {
+    if (selectedProjectId && !projects.some((p) => p.id === selectedProjectId)) {
+      setSelectedProjectId(projects.length ? projects[0].id : null);
+    }
+  }, [projects, selectedProjectId]);
 
   // Reset to Dashboard if the active page needs a project but none is selected.
   useEffect(() => {
@@ -158,7 +225,7 @@ export default function Dashboard() {
     }
   }, [selectedProject, activePage]);
 
-  // ---------------- Actions ----------------
+  // ---------------- Navigation ----------------
 
   function handleNavigation(label) {
     setActivePage(label);
@@ -171,38 +238,30 @@ export default function Dashboard() {
     }
   }
 
+  // ---------------- Project CRUD ----------------
+
   function createProject(event) {
     event.preventDefault();
 
-    if (!schoolName.trim()) {
+    const name = schoolName.trim();
+    if (!name) {
       setNotice("Please enter a school name.");
       return;
     }
 
-    const project = {
-      id: crypto.randomUUID(),
-      schoolName: schoolName.trim(),
+    const project = normalizeProject({
+      id: createId(),
+      schoolName: name,
       academicYear,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       currentStep: 0,
       status: "Draft",
-      data: {
-        school: {},
-        bellSchedule: {},
-        classes: [],
-        subjects: [],
-        teachers: [],
-        mappings: [],
-        teacherMappings: [],
-        allocations: [],
-        timetable: [],
-        substitutions: [],
-      },
-    };
+      data: DEFAULT_DATA(),
+    });
 
     setProjects((previous) => [project, ...previous]);
-    setSelectedProject(project);
+    setSelectedProjectId(project.id);
     setSchoolName("");
     setAcademicYear("2026-27");
     setShowModal(false);
@@ -211,15 +270,44 @@ export default function Dashboard() {
   }
 
   function openProject(project) {
-    setSelectedProject(project);
+    if (!project?.id) return;
+    setSelectedProjectId(project.id);
     setActivePage("School Setup");
-    setNotice(`Opened ${project.schoolName}.`);
+    setNotice(`Opened ${project.schoolName || "project"}.`);
   }
 
-  function updateProjectData(dataKey, newData, extraUpdates = {}) {
-    if (!selectedProject?.id) return;
+  function deleteProject(project) {
+    if (!project?.id) return;
 
-    const projectId = selectedProject.id;
+    const confirmed = window.confirm(
+      `Delete "${project.schoolName || "this project"}"? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    // Flush safety: any in-flight save from a child for this project is
+    // harmless — the child unmounts and its pending record flushes; then
+    // the filter below drops the project. Subsequent calls find nothing.
+    setProjects((previous) => previous.filter((p) => p.id !== project.id));
+
+    if (selectedProjectId === project.id) {
+      const remaining = projects.filter((p) => p.id !== project.id);
+      setSelectedProjectId(remaining.length ? remaining[0].id : null);
+      setActivePage("Dashboard");
+    }
+
+    setNotice(`Deleted "${project.schoolName || "project"}".`);
+  }
+
+  // ---------------- Project data updates ----------------
+  //
+  // Only one writer: `projects`. `selectedProject` derives automatically.
+  // The closure captures the CURRENT `selectedProject.id` so that a pending
+  // debounced save flushed from an unmounting child still writes to the
+  // project it belongs to.
+
+  function updateProjectData(dataKey, newData, extraUpdates = {}) {
+    const projectId = selectedProject?.id;
+    if (!projectId || typeof dataKey !== "string" || !dataKey.trim()) return;
 
     setProjects((previous) =>
       previous.map((project) =>
@@ -236,64 +324,53 @@ export default function Dashboard() {
           : project
       )
     );
-
-    setSelectedProject((previous) =>
-      previous?.id === projectId
-        ? {
-            ...previous,
-            ...extraUpdates,
-            updatedAt: new Date().toISOString(),
-            data: {
-              ...previous.data,
-              [dataKey]: newData,
-            },
-          }
-        : previous
-    );
   }
 
   function updateProjectSchool(schoolData) {
-    updateProjectData("school", schoolData, {
-      schoolName: schoolData.schoolName,
-      academicYear: schoolData.academicYear,
-    });
+    const safe = schoolData && typeof schoolData === "object" ? schoolData : {};
+
+    // Only overwrite top-level `schoolName` / `academicYear` when the
+    // incoming values are actually usable. Otherwise keep the previous ones.
+    const extras = {};
+    if (typeof safe.schoolName === "string" && safe.schoolName.trim()) {
+      extras.schoolName = safe.schoolName.trim();
+    }
+    if (typeof safe.academicYear === "string" && safe.academicYear) {
+      extras.academicYear = safe.academicYear;
+    }
+
+    updateProjectData("school", safe, extras);
   }
 
-  function updateProjectBellSchedule(bellScheduleData) {
-    updateProjectData("bellSchedule", bellScheduleData);
+  function updateProjectBellSchedule(data) {
+    updateProjectData("bellSchedule", data);
+  }
+  function updateProjectClasses(data) {
+    updateProjectData("classes", data);
+  }
+  function updateProjectSubjects(data) {
+    updateProjectData("subjects", data);
+  }
+  function updateProjectMappings(data) {
+    updateProjectData("mappings", data);
+  }
+  function updateProjectTeacherMappings(data) {
+    updateProjectData("teacherMappings", data);
+  }
+  function updateProjectTeachers(data) {
+    updateProjectData("teachers", data);
+  }
+  function updateProjectTimetable(data) {
+    updateProjectData("timetable", data);
+  }
+  function updateProjectSubstitutions(data) {
+    updateProjectData("substitutions", data);
+  }
+  function updateProjectTimetableSettings(data) {
+    updateProjectData("timetableSettings", data);
   }
 
-  function updateProjectClasses(classesData) {
-    updateProjectData("classes", classesData);
-  }
-
-  function updateProjectSubjects(subjectsData) {
-    updateProjectData("subjects", subjectsData);
-  }
-
-  function updateProjectMappings(mappingsData) {
-    updateProjectData("mappings", mappingsData);
-  }
-
-  function updateProjectTeacherMappings(teacherMappingsData) {
-    updateProjectData("teacherMappings", teacherMappingsData);
-  }
-
-  function updateProjectTeachers(teachersData) {
-    updateProjectData("teachers", teachersData);
-  }
-
-  function updateProjectTimetable(timetableData) {
-    updateProjectData("timetable", timetableData);
-  }
-
-  function updateProjectSubstitutions(substitutionData) {
-    updateProjectData("substitutions", substitutionData);
-  }
-
-  function updateProjectTimetableSettings(settingsData) {
-    updateProjectData("timetableSettings", settingsData);
-  }
+  // ---------------- Import / export ----------------
 
   function downloadProject(project) {
     try {
@@ -308,19 +385,24 @@ export default function Dashboard() {
         type: "application/json",
       });
 
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-
-      link.href = url;
-      link.download = `${project.schoolName.replace(
+      const safeName = String(project?.schoolName || "project").replace(
         /[^a-z0-9]/gi,
         "_"
-      )}_${project.academicYear}.timetable`;
+      );
+      const safeYear = String(project?.academicYear || "year").replace(
+        /[^a-z0-9]/gi,
+        "_"
+      );
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${safeName}_${safeYear}.timetable`;
 
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 
       setNotice("Project backup downloaded successfully.");
     } catch (error) {
@@ -340,42 +422,49 @@ export default function Dashboard() {
         const imported = JSON.parse(reader.result);
 
         if (
+          !imported ||
           imported.format !== "school-timetable-project" ||
           imported.schemaVersion !== 1 ||
-          !imported.project?.schoolName ||
-          !imported.project?.data
+          !imported.project ||
+          typeof imported.project !== "object" ||
+          !imported.project.schoolName ||
+          typeof imported.project.schoolName !== "string" ||
+          !imported.project.data ||
+          typeof imported.project.data !== "object"
         ) {
           throw new Error("Invalid project file.");
         }
 
-        const restored = {
+        const restored = normalizeProject({
           ...imported.project,
-          id: crypto.randomUUID(),
+          id: createId(),
+          createdAt: imported.project.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           status: "Draft",
-        };
+        });
+
+        if (!restored) throw new Error("Invalid project file.");
 
         const confirmed = window.confirm(
           `Import project "${restored.schoolName}" for ${restored.academicYear}?`
         );
-
         if (!confirmed) return;
 
         setProjects((previous) => [restored, ...previous]);
-        setSelectedProject(restored);
+        setSelectedProjectId(restored.id);
         setActivePage("School Setup");
         setNotice("Project imported successfully.");
       } catch (error) {
         console.error(error);
         setNotice("Invalid or unsupported timetable project file.");
       } finally {
-        event.target.value = "";
+        if (event?.target) event.target.value = "";
       }
     };
 
     reader.onerror = () => {
       setNotice("Unable to read the selected file.");
-      event.target.value = "";
+      if (event?.target) event.target.value = "";
     };
 
     reader.readAsText(file);
@@ -409,16 +498,16 @@ export default function Dashboard() {
   const activeTeachers = schoolTeachers.filter((item) => item.active !== false);
 
   const schoolSetupComplete =
-    Boolean(schoolData.schoolName?.trim()) &&
+    Boolean(String(schoolData.schoolName || "").trim()) &&
     Boolean(schoolData.academicYear) &&
     Array.isArray(schoolData.workingDays) &&
     schoolData.workingDays.length > 0;
 
   const bellScheduleComplete =
     Array.isArray(bellData.schedule) &&
+    Number(bellData.periodCount) > 0 &&
     bellData.schedule.filter((item) => item.type === "period").length ===
-      Number(bellData.periodCount) &&
-    Number(bellData.periodCount) > 0;
+      Number(bellData.periodCount);
 
   const classesComplete = activeClasses.some(
     (item) =>
@@ -451,14 +540,17 @@ export default function Dashboard() {
     subjectsComplete,
     teachersComplete,
     teacherMappingComplete,
-    false,
-    false,
+    Array.isArray(projectData.allocations) && projectData.allocations.length > 0,
+    Array.isArray(projectData.timetable) && projectData.timetable.length > 0,
   ];
 
   const completedCount = completedStages.filter(Boolean).length;
   const progressPercentage = Math.round(
     (completedCount / steps.length) * 100
   );
+
+  const draftCount = projects.filter((p) => p.status === "Draft").length;
+  const publishedCount = projects.filter((p) => p.status === "Published").length;
 
   // ---------------- Render ----------------
 
@@ -501,7 +593,6 @@ export default function Dashboard() {
         <nav className="navigation">
           {navigation.map((item) => {
             const Icon = item.icon;
-
             return (
               <button
                 key={item.label}
@@ -547,9 +638,7 @@ export default function Dashboard() {
 
           <button
             className="nav-item settings-item"
-            onClick={() =>
-              setNotice("Application settings will be added later.")
-            }
+            onClick={() => setNotice("Application settings will be added later.")}
           >
             <Settings size={18} />
             <span>Settings</span>
@@ -608,8 +697,8 @@ export default function Dashboard() {
                 setNotice("");
               }}
               onBack={() => {
+                // Keep the project selected — user is just navigating back.
                 setActivePage("Dashboard");
-                setSelectedProject(null);
                 setNotice("");
               }}
             />
@@ -729,7 +818,7 @@ export default function Dashboard() {
             <div className="content">
               <div className="empty-state">
                 <div className="empty-icon">
-                  <BookOpen size={30} />
+                  <Users size={30} />
                 </div>
                 <h3>No School Project Selected</h3>
                 <p>Please create or open a school project first.</p>
@@ -791,15 +880,12 @@ export default function Dashboard() {
             </div>
           ))}
 
-        {/* DASHBOARD BODY (hidden when any builder page is open) */}
+        {/* DASHBOARD BODY */}
         <div className={`content ${isBuilderPage ? "content-hidden" : ""}`}>
-          {/* WELCOME */}
           <div className="welcome-section">
             <div>
               <div className="eyebrow">SCHOOL MANAGEMENT WORKSPACE</div>
-
               <h1>Welcome to your dashboard</h1>
-
               <p>
                 Create, organise and manage your school's complete timetable
                 in one place.
@@ -815,11 +901,9 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* NOTIFICATION */}
           {notice && (
             <div className="notice">
               <span>{notice}</span>
-
               <button
                 onClick={() => setNotice("")}
                 aria-label="Dismiss notification"
@@ -846,8 +930,8 @@ export default function Dashboard() {
                 <School size={21} />
               </div>
               <div>
-                <p>School Projects</p>
-                <h2>{projects.length}</h2>
+                <p>Draft Projects</p>
+                <h2>{draftCount}</h2>
               </div>
             </div>
 
@@ -856,8 +940,8 @@ export default function Dashboard() {
                 <Save size={21} />
               </div>
               <div>
-                <p>Saved Projects</p>
-                <h2>{projects.length}</h2>
+                <p>Current Selection</p>
+                <h2>{selectedProject ? "1" : "0"}</h2>
               </div>
             </div>
 
@@ -867,7 +951,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <p>Published Timetables</p>
-                <h2>0</h2>
+                <h2>{publishedCount}</h2>
               </div>
             </div>
           </div>
@@ -927,9 +1011,7 @@ export default function Dashboard() {
               <button
                 className="action-card"
                 onClick={() =>
-                  setNotice(
-                    "Login and cloud saving will be implemented later."
-                  )
+                  setNotice("Login and cloud saving will be implemented later.")
                 }
               >
                 <div className="action-icon orange">
@@ -979,17 +1061,24 @@ export default function Dashboard() {
             ) : (
               <div className="project-list">
                 {projects.map((project) => (
-                  <div className="project-card" key={project.id}>
+                  <div
+                    className={`project-card ${
+                      project.id === selectedProjectId
+                        ? "project-card-selected"
+                        : ""
+                    }`}
+                    key={project.id}
+                  >
                     <div className="project-school-icon">
                       <School size={23} />
                     </div>
 
                     <div className="project-info">
-                      <h3>{project.schoolName}</h3>
+                      <h3>{project.schoolName || "Untitled"}</h3>
                       <p>Academic Year: {project.academicYear}</p>
                       <span>
                         Last saved:{" "}
-                        {new Date(project.updatedAt).toLocaleString()}
+                        {Number.isNaN(new Date(project.updatedAt).getTime()) ? "Unknown" : new Date(project.updatedAt).toLocaleString()}
                       </span>
                     </div>
 
@@ -1009,6 +1098,14 @@ export default function Dashboard() {
                       onClick={() => downloadProject(project)}
                     >
                       <FileDown size={18} />
+                    </button>
+
+                    <button
+                      className="icon-button icon-button-danger"
+                      title="Delete project"
+                      onClick={() => deleteProject(project)}
+                    >
+                      <Trash2 size={18} />
                     </button>
                   </div>
                 ))}
@@ -1059,7 +1156,7 @@ export default function Dashboard() {
             <section className="section selected-project">
               <h2>Selected project</h2>
               <p>
-                {selectedProject.schoolName}
+                {selectedProject.schoolName || "Untitled"}
                 {" · "}
                 {selectedProject.academicYear}
               </p>
@@ -1082,10 +1179,7 @@ export default function Dashboard() {
           className="modal-overlay"
           onClick={() => setShowModal(false)}
         >
-          <div
-            className="modal"
-            onClick={(event) => event.stopPropagation()}
-          >
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <h2>Create New Project</h2>
@@ -1124,6 +1218,7 @@ export default function Dashboard() {
                 <option value="2027-28">2027-28</option>
                 <option value="2028-29">2028-29</option>
                 <option value="2029-30">2029-30</option>
+                <option value="2030-31">2030-31</option>
               </select>
 
               <div className="modal-note">

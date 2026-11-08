@@ -1,5 +1,4 @@
-
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Users,
   Search,
@@ -15,17 +14,28 @@ import {
 
 import "../styles/teacher-mapping.css";
 
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+const safeArray = (v) => (Array.isArray(v) ? v : []);
+const asId = (value) => (value === null || value === undefined ? "" : String(value));
+const safeName = (value) => String(value ?? "").trim();
+const makeId = () =>
+  globalThis.crypto?.randomUUID?.() ||
+  `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 // Two mappings belong to the same "split group" when they share class, section and subject.
 function sameGroup(mapping, classId, sectionId, subjectId) {
   return (
-    mapping.classId === classId &&
-    mapping.sectionId === sectionId &&
-    mapping.subjectId === subjectId
+    asId(mapping?.classId) === asId(classId) &&
+    asId(mapping?.sectionId) === asId(sectionId) &&
+    asId(mapping?.subjectId) === asId(subjectId)
   );
 }
 
 // Divide `required` weekly periods as evenly as possible among teacher ids.
 function evenSplit(teacherIds, required) {
+  if (!teacherIds.length) return {};
   const base = Math.floor(required / teacherIds.length);
   let extra = required % teacherIds.length;
   const result = {};
@@ -40,27 +50,39 @@ export default function TeacherMapping({ project, onSave }) {
   // ==========================================
   // 1. PROJECT DATA
   // ==========================================
-
-  const teachers = (project?.data?.teachers || []).filter(
-    (teacher) => teacher.active !== false
+  const teachers = useMemo(
+    () => safeArray(project?.data?.teachers).filter((t) => t && t.active !== false && asId(t.id)),
+    [project?.data?.teachers]
   );
 
-  const classes = (project?.data?.classes || []).filter(
-    (item) => item.active !== false
+  const classes = useMemo(
+    () => safeArray(project?.data?.classes).filter((c) => c && c.active !== false && asId(c.id)),
+    [project?.data?.classes]
   );
 
-  const subjects = (project?.data?.subjects || []).filter(
-    (subject) => subject.active !== false
+  const subjects = useMemo(
+    () => safeArray(project?.data?.subjects).filter((s) => s && s.active !== false && asId(s.id)),
+    [project?.data?.subjects]
   );
 
-  const classSubjectMappings = project?.data?.mappings || [];
+  const classSubjectMappings = useMemo(
+    () => safeArray(project?.data?.mappings),
+    [project?.data?.mappings]
+  );
 
   // ==========================================
   // 2. STATES
   // ==========================================
-
-  const [teacherMappings, setTeacherMappings] = useState(
-    () => normalizeAll(project?.data?.teacherMappings || [])
+  const [teacherMappings, setTeacherMappings] = useState(() =>
+    normalizeAll(safeArray(project?.data?.teacherMappings).map((m) => ({
+      ...m,
+      id: asId(m?.id) || makeId(),
+      teacherId: asId(m?.teacherId),
+      classId: asId(m?.classId),
+      sectionId: asId(m?.sectionId),
+      subjectId: asId(m?.subjectId),
+      periodsAllocated: Math.max(0, Number(m?.periodsAllocated) || 0),
+    })).filter((m) => m.teacherId && m.classId && m.subjectId))
   );
 
   const [allotmentMode, setAllotmentMode] = useState("teacher");
@@ -75,41 +97,62 @@ export default function TeacherMapping({ project, onSave }) {
   const [teacherPeriodAllocations, setTeacherPeriodAllocations] = useState({});
 
   const [searchTeacher, setSearchTeacher] = useState("");
-  const [searchAvailableTeacher, setSearchAvailableTeacher] =
-    useState("");
+  const [searchAvailableTeacher, setSearchAvailableTeacher] = useState("");
 
   const [reviewMode, setReviewMode] = useState("teacher");
   const [notice, setNotice] = useState("");
+  const [saveStatus, setSaveStatus] = useState("Saved");
 
+  // ==========================================
+  // 3. SAVE INFRASTRUCTURE (refs)
+  // ==========================================
   const onSaveRef = useRef(onSave);
   const isFirstRender = useRef(true);
+  const isFirstMount = useRef(true);
+  const lastProjectIdRef = useRef(project?.id);
 
-  // ==========================================
-  // 3. SELECTED CLASS AND SECTIONS
-  // ==========================================
-
-  const selectedClassData = classes.find(
-    (item) => item.id === selectedClass
-  );
-
-  const sections = (selectedClassData?.sections || []).filter(
-    (section) => section.active !== false
-  );
-
-  const selectedSectionData = sections.find(
-    (section) => section.id === selectedSection
-  );
-
-  // ==========================================
-  // 4. SAVE AND PROJECT SWITCHING
-  // ==========================================
+  // Tracks the pending debounced save so it can be flushed on unmount
+  // or before a project switch. `{ data, onSave, timerId }`.
+  const pendingSaveRef = useRef(null);
 
   useEffect(() => {
     onSaveRef.current = onSave;
   }, [onSave]);
 
+  // ==========================================
+  // 4. PROJECT SWITCHING
+  // ==========================================
+  // Flush any pending save (using the save handler captured when the
+  // pending save was scheduled) BEFORE the new project's data replaces
+  // the current state.
+  useLayoutEffect(() => {
+    if (lastProjectIdRef.current === project?.id) return;
+
+    if (pendingSaveRef.current) {
+      clearTimeout(pendingSaveRef.current.timerId);
+      const { data, onSave: saveFn } = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      saveFn?.(data);
+    }
+
+    lastProjectIdRef.current = project?.id;
+  }, [project?.id]);
+
   useEffect(() => {
-    setTeacherMappings(normalizeAll(project?.data?.teacherMappings || []));
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+
+    setTeacherMappings(normalizeAll(safeArray(project?.data?.teacherMappings).map((m) => ({
+      ...m,
+      id: asId(m?.id) || makeId(),
+      teacherId: asId(m?.teacherId),
+      classId: asId(m?.classId),
+      sectionId: asId(m?.sectionId),
+      subjectId: asId(m?.subjectId),
+      periodsAllocated: Math.max(0, Number(m?.periodsAllocated) || 0),
+    })).filter((m) => m.teacherId && m.classId && m.subjectId)));
     setTeacherPeriodAllocations({});
 
     setSelectedTeacher("");
@@ -123,102 +166,73 @@ export default function TeacherMapping({ project, onSave }) {
     setReviewMode("teacher");
 
     setNotice("");
+    setSaveStatus("Saved");
+
+    // The next save-effect run (triggered by the state update above)
+    // should not persist the freshly loaded data back to the store.
+    isFirstRender.current = true;
   }, [project?.id]);
 
-  // Automatically save assignment changes.
+  // ==========================================
+  // 5. DEBOUNCED AUTO-SAVE
+  // ==========================================
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
       return;
     }
 
-    const timer = setTimeout(() => {
-      onSaveRef.current?.(teacherMappings);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [teacherMappings]);
-
-  // ==========================================
-  // 5. COMMON HELPER FUNCTIONS
-  // ==========================================
-
-  function getClassName(classId) {
-    return (
-      classes.find((item) => item.id === classId)?.name ||
-      "Unknown class"
-    );
-  }
-
-  function getSubjectName(subjectId) {
-    return (
-      subjects.find((subject) => subject.id === subjectId)?.name ||
-      "Unknown subject"
-    );
-  }
-
-  function getTeacherName(teacherId) {
-    return (
-      teachers.find((teacher) => teacher.id === teacherId)?.name ||
-      "Unknown teacher"
-    );
-  }
-
-  function getSectionName(classId, sectionId) {
-    if (!sectionId) {
-      return "Older assignment (no section)";
+    // Cancel any lingering timer (defensive; cleanups should have run).
+    if (pendingSaveRef.current) {
+      clearTimeout(pendingSaveRef.current.timerId);
+      pendingSaveRef.current = null;
     }
 
-    const classData = classes.find(
-      (item) => item.id === classId
-    );
+    const data = teacherMappings;
+    const saveFn = onSaveRef.current;
+    setSaveStatus("Saving…");
+    const timerId = setTimeout(() => {
+      pendingSaveRef.current = null;
+      try {
+        const result = saveFn?.(data);
+        if (result && typeof result.then === "function") {
+          result.then(() => setSaveStatus("Saved")).catch(() => setSaveStatus("Save failed"));
+        } else {
+          setSaveStatus("Saved");
+        }
+      } catch {
+        setSaveStatus("Save failed");
+      }
+    }, 500);
 
-    return (
-      classData?.sections?.find(
-        (section) => section.id === sectionId
-      )?.name || "Unknown section"
-    );
-  }
+    pendingSaveRef.current = { data, onSave: saveFn, timerId };
 
-  // Subjects assigned to the selected class.
-  const availableSubjects = subjects.filter((subject) =>
-    classSubjectMappings.some(
-      (mapping) =>
-        mapping.classId === selectedClass &&
-        mapping.subjectId === subject.id
-    )
-  );
+    return () => {
+      clearTimeout(timerId);
+    };
+  }, [teacherMappings]);
 
-  const selectedTeacherData = teachers.find(
-    (teacher) => teacher.id === selectedTeacher
-  );
-
-  const filteredTeachers = teachers.filter((teacher) =>
-    teacher.name.toLowerCase().includes(searchTeacher.toLowerCase())
-  );
-
-  const filteredAvailableTeachers = teachers.filter((teacher) =>
-    teacher.name
-      .toLowerCase()
-      .includes(searchAvailableTeacher.toLowerCase())
-  );
-
-  // ==========================================
-  // 6. COMMON ASSIGNMENT FUNCTION
-  // ==========================================
+  // Flush any pending save on unmount so navigation never loses work.
+  useEffect(() => {
+    return () => {
+      if (pendingSaveRef.current) {
+        clearTimeout(pendingSaveRef.current.timerId);
+        pendingSaveRef.current.onSave?.(pendingSaveRef.current.data);
+        pendingSaveRef.current = null;
+      }
+    };
+  }, []);
 
   // ==========================================
-  // 6. SPLIT-GROUP HELPERS
+  // 6. NORMALIZATION HELPERS
   // ==========================================
-  // A "group" is every teacher mapped to one subject in one class section.
-  // Each mapping carries a subject code (MATH-1, MATH-2 ...) and the weekly
-  // periods that teacher takes. A lone teacher always takes all periods.
 
   function getWeeklyPeriods(classId, subjectId) {
     const mapping = classSubjectMappings.find(
-      (item) => item.classId === classId && item.subjectId === subjectId
+      (item) => asId(item.classId) === asId(classId) && asId(item.subjectId) === asId(subjectId)
     );
-    return Number(mapping?.periodsPerWeek || 0);
+    const n = Number(mapping?.periodsPerWeek);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
   }
 
   function getSubjectWeeklyPeriods(subjectId) {
@@ -226,8 +240,10 @@ export default function TeacherMapping({ project, onSave }) {
   }
 
   function getSubjectCode(subjectId) {
-    const subject = subjects.find((item) => item.id === subjectId);
-    const source = String(subject?.shortName || subject?.code || subject?.name || "SUB").trim();
+    const subject = subjects.find((item) => asId(item.id) === asId(subjectId));
+    const source = String(
+      subject?.shortName || subject?.code || subject?.name || "SUB"
+    ).trim();
     const words = source.split(/[^A-Za-z0-9]+/).filter(Boolean);
     return (
       (words.length > 1
@@ -258,7 +274,9 @@ export default function TeacherMapping({ project, onSave }) {
         ...mapping,
         subjectCode: `${baseCode}-${position}`,
         periodsAllocated:
-          groupSize === 1 ? required : Number(mapping.periodsAllocated || 0),
+          groupSize === 1
+            ? required
+            : Math.max(0, Number(mapping.periodsAllocated) || 0),
       };
     });
   }
@@ -266,22 +284,26 @@ export default function TeacherMapping({ project, onSave }) {
   // Bring older saved data in line (codes and quotas). Mappings that have no
   // section (very old records) are left exactly as they are.
   function normalizeAll(list) {
-    const seen = new Set();
-    let result = list;
+    // Remove malformed records and duplicate teacher-to-subject assignments
+    // while preserving the first record (including its stable ID).
+    const seenAssignments = new Set();
+    let result = safeArray(list).filter((mapping) => {
+      if (!mapping || !asId(mapping.teacherId) || !asId(mapping.classId) || !asId(mapping.subjectId)) {
+        return false;
+      }
+      const key = `${asId(mapping.teacherId)}::${asId(mapping.classId)}::${asId(mapping.sectionId)}::${asId(mapping.subjectId)}`;
+      if (seenAssignments.has(key)) return false;
+      seenAssignments.add(key);
+      return true;
+    });
 
-    list.forEach((mapping) => {
+    const seenGroups = new Set();
+    result.forEach((mapping) => {
       if (!mapping.sectionId) return;
-
-      const key = `${mapping.classId}::${mapping.sectionId}::${mapping.subjectId}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-
-      result = normalizeGroup(
-        result,
-        mapping.classId,
-        mapping.sectionId,
-        mapping.subjectId
-      );
+      const key = `${asId(mapping.classId)}::${asId(mapping.sectionId)}::${asId(mapping.subjectId)}`;
+      if (seenGroups.has(key)) return;
+      seenGroups.add(key);
+      result = normalizeGroup(result, mapping.classId, mapping.sectionId, mapping.subjectId);
     });
 
     return result;
@@ -293,7 +315,7 @@ export default function TeacherMapping({ project, onSave }) {
     );
     const required = getWeeklyPeriods(classId, subjectId);
     const total = group.reduce(
-      (sum, mapping) => sum + Number(mapping.periodsAllocated || 0),
+      (sum, mapping) => sum + Math.max(0, Number(mapping.periodsAllocated) || 0),
       0
     );
 
@@ -330,7 +352,9 @@ export default function TeacherMapping({ project, onSave }) {
           ? ` · ${mapping.periodsAllocated} periods/week`
           : ""}
         {warning && (
-          <em style={{ color: "#b45309", fontStyle: "normal", marginLeft: 8 }}>
+          <em
+            style={{ color: "#b45309", fontStyle: "normal", marginLeft: 8 }}
+          >
             ⚠ {warning}
           </em>
         )}
@@ -339,22 +363,143 @@ export default function TeacherMapping({ project, onSave }) {
   }
 
   // ==========================================
-  // 7. COMMON ASSIGNMENT FUNCTION
+  // 7. NAME LOOKUPS
   // ==========================================
+  function getClassName(classId) {
+    return classes.find((item) => asId(item.id) === asId(classId))?.name || "Unknown class";
+  }
 
+  function getSubjectName(subjectId) {
+    return (
+      subjects.find((subject) => asId(subject.id) === asId(subjectId))?.name ||
+      "Unknown subject"
+    );
+  }
+
+  function getTeacherName(teacherId) {
+    return (
+      teachers.find((teacher) => asId(teacher.id) === asId(teacherId))?.name ||
+      "Unknown teacher"
+    );
+  }
+
+  function getSectionName(classId, sectionId) {
+    if (!sectionId) return "Older assignment (no section)";
+
+    const classData = classes.find((item) => asId(item.id) === asId(classId));
+
+    return (
+      classData?.sections?.find((section) => asId(section.id) === asId(sectionId))?.name ||
+      "Unknown section"
+    );
+  }
+
+  // ==========================================
+  // 8. DERIVED DATA
+  // ==========================================
+  const selectedClassData = classes.find((item) => item.id === selectedClass);
+
+  const sections = useMemo(
+    () =>
+      safeArray(selectedClassData?.sections).filter(
+        (section) => section.active !== false
+      ),
+    [selectedClassData]
+  );
+
+  const selectedSectionData = sections.find(
+    (section) => section.id === selectedSection
+  );
+
+  const availableSubjects = useMemo(
+    () =>
+      selectedClass
+        ? subjects.filter((subject) =>
+            classSubjectMappings.some(
+              (mapping) =>
+                asId(mapping.classId) === asId(selectedClass) &&
+                mapping.subjectId === subject.id
+            )
+          )
+        : [],
+    [subjects, classSubjectMappings, selectedClass]
+  );
+
+  const selectedTeacherData = teachers.find((t) => t.id === selectedTeacher);
+
+  const filteredTeachers = useMemo(() => {
+    const q = searchTeacher.toLowerCase();
+    return teachers.filter((t) => safeName(t.name).toLowerCase().includes(q));
+  }, [teachers, searchTeacher]);
+
+  const filteredAvailableTeachers = useMemo(() => {
+    const q = searchAvailableTeacher.toLowerCase();
+    return teachers.filter((t) => safeName(t.name).toLowerCase().includes(q));
+  }, [teachers, searchAvailableTeacher]);
+
+  const currentTeacherAssignments = useMemo(
+    () => teacherMappings.filter((m) => m.teacherId === selectedTeacher),
+    [teacherMappings, selectedTeacher]
+  );
+
+  const currentSubjectAssignments = useMemo(
+    () =>
+      teacherMappings.filter(
+        (m) =>
+          m.classId === selectedClass &&
+          m.sectionId === selectedSection &&
+          m.subjectId === selectedSubject
+      ),
+    [teacherMappings, selectedClass, selectedSection, selectedSubject]
+  );
+
+  const incompleteSplits = useMemo(() => {
+    const seen = new Set();
+    const list = [];
+
+    teacherMappings.forEach((mapping) => {
+      if (!mapping.sectionId) return;
+      if (!classes.some((c) => c.id === mapping.classId)) return;
+      if (!subjects.some((s) => s.id === mapping.subjectId)) return;
+
+      const key = `${mapping.classId}::${mapping.sectionId}::${mapping.subjectId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      const status = getGroupStatus(
+        mapping.classId,
+        mapping.sectionId,
+        mapping.subjectId
+      );
+
+      if (!status.ok) {
+        list.push(
+          `${getClassName(mapping.classId)}-${getSectionName(
+            mapping.classId,
+            mapping.sectionId
+          )} ${getSubjectName(mapping.subjectId)}`
+        );
+      }
+    });
+
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teacherMappings, classes, subjects, classSubjectMappings]);
+
+  // ==========================================
+  // 9. COMMON ASSIGNMENT
+  // ==========================================
   function addAssignment(teacherId, classId, sectionId, subjectId) {
     const alreadyAssigned = teacherMappings.some(
       (mapping) =>
-        mapping.teacherId === teacherId &&
+        asId(mapping.teacherId) === asId(teacherId) &&
         sameGroup(mapping, classId, sectionId, subjectId)
     );
 
-    if (alreadyAssigned) {
-      return false;
-    }
+    if (alreadyAssigned) return false;
 
     const newAssignment = {
-      id: crypto.randomUUID(),
+      id: makeId(),
       teacherId,
       classId,
       sectionId,
@@ -366,7 +511,7 @@ export default function TeacherMapping({ project, onSave }) {
     setTeacherMappings((previous) =>
       previous.some(
         (mapping) =>
-          mapping.teacherId === teacherId &&
+          asId(mapping.teacherId) === asId(teacherId) &&
           sameGroup(mapping, classId, sectionId, subjectId)
       )
         ? previous
@@ -382,9 +527,8 @@ export default function TeacherMapping({ project, onSave }) {
   }
 
   // ==========================================
-  // 8. TEACHER-WISE ALLOTMENT
+  // 10. TEACHER-WISE ALLOTMENT
   // ==========================================
-
   function assignTeacherWise(subjectId) {
     if (!selectedTeacher || !selectedClass || !selectedSection) {
       setNotice("Select teacher, class and section first.");
@@ -418,13 +562,12 @@ export default function TeacherMapping({ project, onSave }) {
   }
 
   // ==========================================
-  // 9. CLASS-WISE TEACHER SELECTION
+  // 11. CLASS-WISE TEACHER SELECTION
   // ==========================================
-
   function isTeacherAssigned(teacherId) {
     return teacherMappings.some(
       (mapping) =>
-        mapping.teacherId === teacherId &&
+        asId(mapping.teacherId) === asId(teacherId) &&
         sameGroup(mapping, selectedClass, selectedSection, selectedSubject)
     );
   }
@@ -439,14 +582,15 @@ export default function TeacherMapping({ project, onSave }) {
 
     setSelectedSubject(subjectId);
     setSelectedTeachers(group.map((mapping) => mapping.teacherId));
+
     setTeacherPeriodAllocations(
       Object.fromEntries(
-        group.map((mapping) => [
-          mapping.teacherId,
-          Number(mapping.periodsAllocated) ||
-            (group.length === 1 ? required : 1) ||
-            1,
-        ])
+        group.map((mapping) => {
+          const existing = Number(mapping.periodsAllocated);
+          const value =
+            existing > 0 ? existing : group.length === 1 ? required : 1;
+          return [mapping.teacherId, value];
+        })
       )
     );
     setSearchAvailableTeacher("");
@@ -479,7 +623,7 @@ export default function TeacherMapping({ project, onSave }) {
     setSelectedTeachers(updated);
     setTeacherPeriodAllocations((previous) => {
       if (updated.length === 1) {
-        return { ...previous, [teacherId]: required || 1 };
+        return { ...previous, [teacherId]: required };
       }
 
       return required >= updated.length
@@ -495,7 +639,8 @@ export default function TeacherMapping({ project, onSave }) {
       return required;
     }
 
-    return teacherPeriodAllocations[teacherId] ?? 1;
+    const stored = teacherPeriodAllocations[teacherId];
+    return stored === undefined || stored === null ? 1 : stored;
   }
 
   function distributeEvenly() {
@@ -538,7 +683,9 @@ export default function TeacherMapping({ project, onSave }) {
 
     if (isSplit) {
       if (allocations.some((value) => !Number.isInteger(value) || value < 1)) {
-        setNotice("Give each selected teacher a whole number of weekly periods (at least 1).");
+        setNotice(
+          "Give each selected teacher a whole number of weekly periods (at least 1)."
+        );
         return;
       }
 
@@ -558,12 +705,12 @@ export default function TeacherMapping({ project, onSave }) {
 
     const newGroup = selectedTeachers.map((teacherId, index) => {
       const existing = existingGroup.find(
-        (mapping) => mapping.teacherId === teacherId
+        (mapping) => asId(mapping.teacherId) === asId(teacherId)
       );
 
       return {
         ...(existing || {
-          id: crypto.randomUUID(),
+          id: makeId(),
           teacherId,
           classId: selectedClass,
           sectionId: selectedSection,
@@ -593,14 +740,16 @@ export default function TeacherMapping({ project, onSave }) {
 
     if (!isSplit) {
       setTeacherPeriodAllocations({
-        [selectedTeachers[0]]: required || 1,
+        [selectedTeachers[0]]: required,
       });
     }
 
     setNotice(
       isSplit
         ? `${getSubjectCode(subjectId)} split between ${newGroup.length} teachers. Weekly periods allocated: ${required}/${required}.`
-        : `${getSubjectName(subjectId)} assigned to ${getTeacherName(selectedTeachers[0])}.`
+        : `${getSubjectName(subjectId)} assigned to ${getTeacherName(
+            selectedTeachers[0]
+          )}.`
     );
   }
 
@@ -648,7 +797,8 @@ export default function TeacherMapping({ project, onSave }) {
                 Weekly periods
                 <input
                   type="number"
-                  min="1"
+                  min={single ? "0" : "1"}
+                  max={required > 0 ? String(required) : undefined}
                   step="1"
                   value={allocationValue(teacherId)}
                   disabled={single && required > 0}
@@ -688,17 +838,16 @@ export default function TeacherMapping({ project, onSave }) {
   }
 
   // ==========================================
-  // 10. REMOVE ASSIGNMENT
+  // 12. REMOVE ASSIGNMENT
   // ==========================================
-
   function removeAssignment(id) {
-    const target = teacherMappings.find((mapping) => mapping.id === id);
+    const target = teacherMappings.find((mapping) => asId(mapping.id) === asId(id));
 
     if (!target) return;
 
     setTeacherMappings((previous) =>
       normalizeGroup(
-        previous.filter((mapping) => mapping.id !== id),
+        previous.filter((mapping) => asId(mapping.id) !== asId(id)),
         target.classId,
         target.sectionId,
         target.subjectId
@@ -732,78 +881,24 @@ export default function TeacherMapping({ project, onSave }) {
   }
 
   // ==========================================
-  // 10. ASSIGNMENT FILTERS
+  // 13. PAGE UI
   // ==========================================
-
-  const currentTeacherAssignments = teacherMappings.filter(
-    (mapping) => mapping.teacherId === selectedTeacher
-  );
-
-  const currentSubjectAssignments = teacherMappings.filter(
-    (mapping) =>
-      mapping.classId === selectedClass &&
-      mapping.sectionId === selectedSection &&
-      mapping.subjectId === selectedSubject
-  );
-
-  const incompleteSplits = (() => {
-    const seen = new Set();
-    const list = [];
-
-    teacherMappings.forEach((mapping) => {
-      if (!mapping.sectionId) return;
-      if (!classes.some((item) => item.id === mapping.classId)) return;
-      if (!subjects.some((item) => item.id === mapping.subjectId)) return;
-
-      const key = `${mapping.classId}::${mapping.sectionId}::${mapping.subjectId}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-
-      const status = getGroupStatus(
-        mapping.classId,
-        mapping.sectionId,
-        mapping.subjectId
-      );
-
-      if (!status.ok) {
-        list.push(
-          `${getClassName(mapping.classId)}-${getSectionName(
-            mapping.classId,
-            mapping.sectionId
-          )} ${getSubjectName(mapping.subjectId)}`
-        );
-      }
-    });
-
-    return list;
-  })();
-
-  // ==========================================
-  // 11. PAGE UI
-  // ==========================================
-
   return (
     <div className="teacher-mapping-page">
-
       {/* HEADER */}
-
       <div className="tm-heading">
         <div>
-          <span className="tm-eyebrow">
-            TEACHER MANAGEMENT
-          </span>
-
+          <span className="tm-eyebrow">TEACHER MANAGEMENT</span>
           <h1>Teacher Mapping</h1>
-
           <p>
             Allocate teachers using either teacher-wise or class-wise
             selection.
           </p>
         </div>
 
-        <div className="tm-total">
+        <div className="tm-total" aria-live="polite" title={`Auto-save status: ${saveStatus}`}>
+          <span className="tm-save-status">{saveStatus}</span>
           <Users size={20} />
-
           <div>
             <strong>{teacherMappings.length}</strong>
             <span>Assignments</span>
@@ -812,15 +907,10 @@ export default function TeacherMapping({ project, onSave }) {
       </div>
 
       {/* NOTIFICATION */}
-
       {notice && (
         <div className="tm-notice">
           <span>{notice}</span>
-
-          <button
-            onClick={() => setNotice("")}
-            aria-label="Dismiss notice"
-          >
+          <button onClick={() => setNotice("")} aria-label="Dismiss notice">
             <X size={16} />
           </button>
         </div>
@@ -830,7 +920,11 @@ export default function TeacherMapping({ project, onSave }) {
         <div
           className="tm-notice"
           role="alert"
-          style={{ borderColor: "#f59e0b", background: "#fffbeb", color: "#92400e" }}
+          style={{
+            borderColor: "#f59e0b",
+            background: "#fffbeb",
+            color: "#92400e",
+          }}
         >
           <span>
             {incompleteSplits.length} subject(s) have shared teachers whose
@@ -845,39 +939,27 @@ export default function TeacherMapping({ project, onSave }) {
       )}
 
       {/* VALIDATION */}
-
       {teachers.length === 0 ||
       classes.length === 0 ||
       subjects.length === 0 ? (
-
         <div className="tm-empty">
           <Users size={30} />
-
           <h3>Complete the previous setup first</h3>
-
           <p>
-            Add active teachers, classes and subjects, and assign
-            subjects to classes in the Subjects section.
+            Add active teachers, classes and subjects, and assign subjects to
+            classes in the Subjects section.
           </p>
         </div>
-
       ) : (
-
         <>
-
-          {/* =================================
-              ALLOTMENT MODE SELECTOR
-          ================================= */}
-
+          {/* ALLOTMENT MODE SELECTOR */}
           <section className="tm-panel tm-mode-panel">
-
             <div className="tm-panel-heading">
               <ListChecks size={19} />
               <h2>Select Allotment Method</h2>
             </div>
 
             <div className="tm-mode-options">
-
               <button
                 className={`tm-mode-option ${
                   allotmentMode === "teacher" ? "active" : ""
@@ -889,22 +971,19 @@ export default function TeacherMapping({ project, onSave }) {
                   setSelectedSection("");
                   setSelectedSubject("");
                   setSelectedTeachers([]);
+                  setTeacherPeriodAllocations({});
                   setNotice("");
                 }}
               >
                 <UserRound size={23} />
-
                 <div>
                   <strong>Teacher-wise Allotment</strong>
                   <span>
-                    Select a teacher first, then assign classes,
-                    sections and subjects.
+                    Select a teacher first, then assign classes, sections and
+                    subjects.
                   </span>
                 </div>
-
-                {allotmentMode === "teacher" && (
-                  <Check size={19} />
-                )}
+                {allotmentMode === "teacher" && <Check size={19} />}
               </button>
 
               <button
@@ -918,40 +997,27 @@ export default function TeacherMapping({ project, onSave }) {
                   setSelectedSection("");
                   setSelectedSubject("");
                   setSelectedTeachers([]);
+                  setTeacherPeriodAllocations({});
                   setNotice("");
                 }}
               >
                 <GraduationCap size={23} />
-
                 <div>
                   <strong>Class-wise Allotment</strong>
                   <span>
-                    Select a class, section and subject, then
-                    choose available teachers.
+                    Select a class, section and subject, then choose available
+                    teachers.
                   </span>
                 </div>
-
-                {allotmentMode === "class" && (
-                  <Check size={19} />
-                )}
+                {allotmentMode === "class" && <Check size={19} />}
               </button>
-
             </div>
-
           </section>
 
-          {/* =================================
-              OPTION 1: TEACHER-WISE
-          ================================= */}
-
+          {/* OPTION 1: TEACHER-WISE */}
           {allotmentMode === "teacher" && (
-
             <div className="tm-layout">
-
-              {/* TEACHER LIST */}
-
               <section className="tm-panel tm-teacher-panel">
-
                 <div className="tm-panel-heading">
                   <UserRound size={19} />
                   <h2>1. Select Teacher</h2>
@@ -959,26 +1025,19 @@ export default function TeacherMapping({ project, onSave }) {
 
                 <div className="tm-search">
                   <Search size={17} />
-
                   <input
                     value={searchTeacher}
-                    onChange={(event) =>
-                      setSearchTeacher(event.target.value)
-                    }
+                    onChange={(event) => setSearchTeacher(event.target.value)}
                     placeholder="Search teachers..."
                   />
                 </div>
 
                 <div className="tm-teacher-list">
-
                   {filteredTeachers.map((teacher) => (
-
                     <button
                       key={teacher.id}
                       className={`tm-teacher-option ${
-                        selectedTeacher === teacher.id
-                          ? "selected"
-                          : ""
+                        selectedTeacher === teacher.id ? "selected" : ""
                       }`}
                       onClick={() => {
                         setSelectedTeacher(teacher.id);
@@ -987,77 +1046,48 @@ export default function TeacherMapping({ project, onSave }) {
                         setNotice("");
                       }}
                     >
-
                       <span className="tm-avatar">
-                        {teacher.name.charAt(0).toUpperCase()}
+                        {safeName(teacher.name).charAt(0).toUpperCase()}
                       </span>
-
-                      <span className="tm-teacher-name">
-                        {teacher.name}
-                      </span>
-
-                      {selectedTeacher === teacher.id && (
-                        <Check size={18} />
-                      )}
-
+                      <span className="tm-teacher-name">{teacher.name}</span>
+                      {selectedTeacher === teacher.id && <Check size={18} />}
                     </button>
-
                   ))}
 
                   {filteredTeachers.length === 0 && (
-                    <p className="tm-muted">
-                      No teachers found.
-                    </p>
+                    <p className="tm-muted">No teachers found.</p>
                   )}
-
                 </div>
-
               </section>
 
-              {/* CLASS, SECTION AND SUBJECTS */}
-
               <section className="tm-panel tm-assignment-panel">
-
                 <div className="tm-panel-heading">
                   <GraduationCap size={19} />
                   <h2>2. Select Class</h2>
                 </div>
 
                 {!selectedTeacher ? (
-
                   <p className="tm-instruction">
                     Select a teacher to continue.
                   </p>
-
                 ) : (
-
                   <>
-
                     <div className="tm-selected-teacher">
-
                       <span className="tm-avatar">
-                        {selectedTeacherData?.name
-                          ?.charAt(0)
-                          .toUpperCase()}
+                        {safeName(selectedTeacherData?.name).charAt(0).toUpperCase()}
                       </span>
-
                       <div>
                         <strong>{selectedTeacherData?.name}</strong>
                         <span>Selected teacher</span>
                       </div>
-
                     </div>
 
                     <div className="tm-class-list">
-
                       {classes.map((item) => (
-
                         <button
                           key={item.id}
                           className={`tm-class-option ${
-                            selectedClass === item.id
-                              ? "selected"
-                              : ""
+                            selectedClass === item.id ? "selected" : ""
                           }`}
                           onClick={() => {
                             setSelectedClass(item.id);
@@ -1065,41 +1095,27 @@ export default function TeacherMapping({ project, onSave }) {
                             setNotice("");
                           }}
                         >
-
                           <GraduationCap size={17} />
                           <span>{item.name}</span>
-
-                          {selectedClass === item.id && (
-                            <Check size={17} />
-                          )}
-
+                          {selectedClass === item.id && <Check size={17} />}
                         </button>
-
                       ))}
-
                     </div>
 
                     {selectedClass && (
-
                       <div className="tm-section-selector">
-
                         <div className="tm-subject-heading">
                           <GraduationCap size={18} />
                           <h2>3. Select Section</h2>
                         </div>
 
                         {sections.length === 0 ? (
-
                           <p className="tm-instruction">
                             No active sections found for this class.
                           </p>
-
                         ) : (
-
                           <div className="tm-class-list">
-
                             {sections.map((section) => (
-
                               <button
                                 key={section.id}
                                 className={`tm-class-option ${
@@ -1112,36 +1128,22 @@ export default function TeacherMapping({ project, onSave }) {
                                   setNotice("");
                                 }}
                               >
-
                                 <GraduationCap size={17} />
                                 <span>{section.name}</span>
-
                                 {selectedSection === section.id && (
                                   <Check size={17} />
                                 )}
-
                               </button>
-
                             ))}
-
                           </div>
-
                         )}
-
                       </div>
-
                     )}
-
                   </>
-
                 )}
 
-                {selectedTeacher &&
-                 selectedClass &&
-                 selectedSection && (
-
+                {selectedTeacher && selectedClass && selectedSection && (
                   <div className="tm-section-subjects">
-
                     <div className="tm-subject-heading">
                       <BookOpen size={18} />
                       <h2>4. Assign Subjects</h2>
@@ -1153,35 +1155,24 @@ export default function TeacherMapping({ project, onSave }) {
                     </p>
 
                     {availableSubjects.length === 0 ? (
-
                       <p className="tm-instruction">
                         No subjects mapped to this class.
                       </p>
-
                     ) : (
-
                       <div className="tm-subject-list">
-
                         {availableSubjects.map((subject) => {
-
                           const assigned = teacherMappings.some(
                             (mapping) =>
-                              mapping.teacherId === selectedTeacher &&
-                              mapping.classId === selectedClass &&
-                              mapping.sectionId === selectedSection &&
+                              asId(mapping.teacherId) === asId(selectedTeacher) &&
+                              asId(mapping.classId) === asId(selectedClass) &&
+                              asId(mapping.sectionId) === asId(selectedSection) &&
                               mapping.subjectId === subject.id
                           );
 
                           return (
-
-                            <div
-                              className="tm-subject-option"
-                              key={subject.id}
-                            >
-
+                            <div className="tm-subject-option" key={subject.id}>
                               <div>
                                 <strong>{subject.name}</strong>
-
                                 <span>
                                   {assigned
                                     ? "Already assigned"
@@ -1190,13 +1181,9 @@ export default function TeacherMapping({ project, onSave }) {
                               </div>
 
                               <button
-                                className={
-                                  assigned ? "assigned" : "assign"
-                                }
+                                className={assigned ? "assigned" : "assign"}
                                 disabled={assigned}
-                                onClick={() =>
-                                  assignTeacherWise(subject.id)
-                                }
+                                onClick={() => assignTeacherWise(subject.id)}
                               >
                                 {assigned ? (
                                   <>
@@ -1207,199 +1194,129 @@ export default function TeacherMapping({ project, onSave }) {
                                   "Assign"
                                 )}
                               </button>
-
                             </div>
-
                           );
-
                         })}
-
                       </div>
-
                     )}
-
                   </div>
-
                 )}
-
               </section>
-
             </div>
-
           )}
 
-          {/* =================================
-              OPTION 2: CLASS-WISE
-          ================================= */}
-
+          {/* OPTION 2: CLASS-WISE */}
           {allotmentMode === "class" && (
-
             <section className="tm-panel tm-classwise-panel">
-
               <div className="tm-panel-heading">
                 <GraduationCap size={19} />
                 <h2>Class-wise Teacher Allotment</h2>
               </div>
 
               <p className="tm-instruction">
-                Select a class, section and subject. Then select
-                one or multiple teachers.
+                Select a class, section and subject. Then select one or
+                multiple teachers.
               </p>
 
               {/* CLASS SELECTION */}
-
               <div className="tm-classwise-step">
-
                 <h3>1. Select Class</h3>
 
                 <div className="tm-class-list">
-
                   {classes.map((item) => (
-
                     <button
                       key={item.id}
                       className={`tm-class-option ${
-                        selectedClass === item.id
-                          ? "selected"
-                          : ""
+                        selectedClass === item.id ? "selected" : ""
                       }`}
                       onClick={() => {
                         setSelectedClass(item.id);
                         setSelectedSection("");
                         setSelectedSubject("");
                         setSelectedTeachers([]);
+                        setTeacherPeriodAllocations({});
                         setNotice("");
                       }}
                     >
-
                       <GraduationCap size={17} />
                       <span>{item.name}</span>
-
-                      {selectedClass === item.id && (
-                        <Check size={17} />
-                      )}
-
+                      {selectedClass === item.id && <Check size={17} />}
                     </button>
-
                   ))}
-
                 </div>
-
               </div>
 
               {/* SECTION SELECTION */}
-
               {selectedClass && (
-
                 <div className="tm-classwise-step">
-
                   <h3>2. Select Section</h3>
 
                   {sections.length === 0 ? (
-
                     <p className="tm-instruction">
                       No active sections available.
                     </p>
-
                   ) : (
-
                     <div className="tm-class-list">
-
                       {sections.map((section) => (
-
                         <button
                           key={section.id}
                           className={`tm-class-option ${
-                            selectedSection === section.id
-                              ? "selected"
-                              : ""
+                            selectedSection === section.id ? "selected" : ""
                           }`}
                           onClick={() => {
                             setSelectedSection(section.id);
                             setSelectedSubject("");
                             setSelectedTeachers([]);
+                            setTeacherPeriodAllocations({});
                             setNotice("");
                           }}
                         >
-
                           <GraduationCap size={17} />
                           <span>{section.name}</span>
-
                           {selectedSection === section.id && (
                             <Check size={17} />
                           )}
-
                         </button>
-
                       ))}
-
                     </div>
-
                   )}
-
                 </div>
-
               )}
 
               {/* SUBJECT SELECTION */}
-
               {selectedClass && selectedSection && (
-
                 <div className="tm-classwise-step">
-
                   <h3>3. Select Subject</h3>
 
                   {availableSubjects.length === 0 ? (
-
                     <p className="tm-instruction">
                       No subjects are mapped to this class.
                     </p>
-
                   ) : (
-
                     <div className="tm-subject-list">
-
                       {availableSubjects.map((subject) => (
-
                         <button
                           key={subject.id}
                           className={`tm-class-option ${
-                            selectedSubject === subject.id
-                              ? "selected"
-                              : ""
+                            selectedSubject === subject.id ? "selected" : ""
                           }`}
-                          onClick={() =>
-                            selectSubjectForClasswise(subject.id)
-                          }
+                          onClick={() => selectSubjectForClasswise(subject.id)}
                         >
-
                           <BookOpen size={17} />
                           <span>{subject.name}</span>
-
                           {selectedSubject === subject.id && (
                             <Check size={17} />
                           )}
-
                         </button>
-
                       ))}
-
                     </div>
-
                   )}
-
                 </div>
-
               )}
 
               {/* TEACHER SELECTION */}
-
-              {selectedClass &&
-               selectedSection &&
-               selectedSubject && (
-
+              {selectedClass && selectedSection && selectedSubject && (
                 <div className="tm-classwise-step">
-
                   <div className="tm-subject-heading">
                     <UserPlus size={19} />
                     <h3>4. Select Available Teachers</h3>
@@ -1407,59 +1324,44 @@ export default function TeacherMapping({ project, onSave }) {
 
                   <p className="tm-instruction">
                     {getSubjectName(selectedSubject)} —{" "}
-                    {getClassName(selectedClass)} -{" "}
-                    {selectedSectionData?.name}
+                    {getClassName(selectedClass)} - {selectedSectionData?.name}
                   </p>
 
                   {/* ALREADY ASSIGNED TEACHERS */}
-
                   {currentSubjectAssignments.length > 0 && (
-
                     <div className="tm-currently-assigned">
-
                       <strong>Saved teachers for this subject</strong>
 
                       <div className="tm-assigned-teacher-list">
-
                         {currentSubjectAssignments.map((mapping) => (
-
                           <div
                             className="tm-assigned-teacher"
                             key={mapping.id}
                           >
-
                             <span>
-                              {getTeacherName(mapping.teacherId)}{periodsLabel(mapping)}
+                              {getTeacherName(mapping.teacherId)}
+                              {periodsLabel(mapping)}
                             </span>
 
                             <span className="tm-assigned-label">Assigned</span>
 
                             <button
                               className="tm-remove"
-                              onClick={() =>
-                                removeAssignment(mapping.id)
-                              }
+                              onClick={() => removeAssignment(mapping.id)}
                               title="Remove assignment"
                             >
                               <Trash2 size={15} />
                               Remove
                             </button>
-
                           </div>
-
                         ))}
-
                       </div>
-
                     </div>
-
                   )}
 
                   {/* SEARCH AVAILABLE TEACHERS */}
-
                   <div className="tm-search">
                     <Search size={17} />
-
                     <input
                       value={searchAvailableTeacher}
                       onChange={(event) =>
@@ -1470,70 +1372,48 @@ export default function TeacherMapping({ project, onSave }) {
                   </div>
 
                   {/* TEACHER CHECKBOXES */}
-
                   <div className="tm-available-teachers">
-
                     {filteredAvailableTeachers.map((teacher) => {
-
                       const assigned = isTeacherAssigned(teacher.id);
-
-                      const checked = selectedTeachers.includes(
-                        teacher.id
-                      );
+                      const checked = selectedTeachers.includes(teacher.id);
 
                       return (
-
                         <label
                           className="tm-available-teacher"
                           key={teacher.id}
                         >
-
                           <input
                             type="checkbox"
                             checked={checked}
-                            onChange={() =>
-                              toggleTeacherSelection(teacher.id)
-                            }
+                            onChange={() => toggleTeacherSelection(teacher.id)}
                           />
 
                           <span className="tm-avatar">
-                            {teacher.name.charAt(0).toUpperCase()}
+                            {safeName(teacher.name).charAt(0).toUpperCase()}
                           </span>
 
-                          <span className="tm-teacher-name">
-                            {teacher.name}
-                          </span>
+                          <span className="tm-teacher-name">{teacher.name}</span>
 
                           {assigned ? (
-                            <span className="tm-assigned-label">
-                              Assigned
-                            </span>
+                            <span className="tm-assigned-label">Assigned</span>
                           ) : (
                             <span className="tm-available-label">
                               Available
                             </span>
                           )}
-
                         </label>
-
                       );
-
                     })}
 
                     {filteredAvailableTeachers.length === 0 && (
-                      <p className="tm-muted">
-                        No teachers found.
-                      </p>
+                      <p className="tm-muted">No teachers found.</p>
                     )}
-
                   </div>
 
                   {selectedTeachers.length > 0 && renderAllocationPanel()}
 
                   {/* ASSIGN BUTTON */}
-
                   <div className="tm-bulk-actions">
-
                     <span>
                       {selectedTeachers.length} teacher(s) selected
                     </span>
@@ -1546,133 +1426,87 @@ export default function TeacherMapping({ project, onSave }) {
                       <UserPlus size={16} />
                       Save Assignment
                     </button>
-
                   </div>
-
                 </div>
-
               )}
-
             </section>
-
           )}
-
         </>
-
       )}
 
-      {/* =================================
-          12. ASSIGNMENT REVIEW
-      ================================= */}
-
+      {/* ASSIGNMENT REVIEW */}
       <section className="tm-panel tm-review-panel">
-
         <div className="tm-panel-heading">
           <BookOpen size={19} />
           <h2>Review Teacher Assignments</h2>
         </div>
 
         <div className="tm-review-tabs">
-
           <button
-            className={
-              reviewMode === "teacher" ? "active" : ""
-            }
+            className={reviewMode === "teacher" ? "active" : ""}
             onClick={() => setReviewMode("teacher")}
           >
             Teacher-wise
           </button>
 
           <button
-            className={
-              reviewMode === "class" ? "active" : ""
-            }
+            className={reviewMode === "class" ? "active" : ""}
             onClick={() => setReviewMode("class")}
           >
             Class-wise
           </button>
-
         </div>
 
         {/* TEACHER-WISE REVIEW */}
-
         {reviewMode === "teacher" ? (
-
           <>
-
             {!selectedTeacher ? (
-
               <p className="tm-instruction">
-                Select a teacher in Teacher-wise Allotment to view
-                their assignments.
+                Select a teacher in Teacher-wise Allotment to view their
+                assignments.
               </p>
-
             ) : currentTeacherAssignments.length === 0 ? (
-
               <p className="tm-instruction">
                 No subjects assigned to {selectedTeacherData?.name}.
               </p>
-
             ) : (
-
               <div className="tm-review-list">
-
                 {currentTeacherAssignments.map((mapping) => (
-
-                  <div
-                    className="tm-review-item"
-                    key={mapping.id}
-                  >
-
+                  <div className="tm-review-item" key={mapping.id}>
                     <div>
-                      <strong>
-                        {getClassName(mapping.classId)}
-                      </strong>
-
+                      <strong>{getClassName(mapping.classId)}</strong>
                       <span>
-                        {getSectionName(
-                          mapping.classId,
-                          mapping.sectionId
-                        )}
+                        {getSectionName(mapping.classId, mapping.sectionId)}
                         {" • "}
-                        {getSubjectName(mapping.subjectId)} {mapping.subjectCode ? `(${mapping.subjectCode})` : ""}
+                        {getSubjectName(mapping.subjectId)}{" "}
+                        {mapping.subjectCode
+                          ? `(${mapping.subjectCode})`
+                          : ""}
                         {periodsLabel(mapping)}
                       </span>
                     </div>
 
                     <button
                       className="tm-remove"
-                      onClick={() =>
-                        removeAssignment(mapping.id)
-                      }
+                      onClick={() => removeAssignment(mapping.id)}
                     >
                       <Trash2 size={17} />
                       Remove
                     </button>
-
                   </div>
-
                 ))}
-
               </div>
-
             )}
-
           </>
-
         ) : (
-
           /* CLASS-WISE REVIEW */
-
           <>
-
             {classes.map((item) => {
-
               const classAssignments = teacherMappings.filter(
-                (mapping) => mapping.classId === item.id
+                (mapping) => asId(mapping.classId) === asId(item.id)
               );
 
-              const activeSections = (item.sections || []).filter(
+              const activeSections = safeArray(item.sections).filter(
                 (section) => section.active !== false
               );
 
@@ -1681,86 +1515,57 @@ export default function TeacherMapping({ project, onSave }) {
               );
 
               return (
-
-                <div
-                  className="tm-class-review"
-                  key={item.id}
-                >
-
+                <div className="tm-class-review" key={item.id}>
                   <h3>{item.name}</h3>
 
                   {activeSections.map((section) => {
-
                     const sectionAssignments = classAssignments.filter(
-                      (mapping) => mapping.sectionId === section.id
+                      (mapping) => asId(mapping.sectionId) === asId(section.id)
                     );
 
                     return (
-
-                      <div
-                        className="tm-section-review"
-                        key={section.id}
-                      >
-
+                      <div className="tm-section-review" key={section.id}>
                         <h4>Section {section.name}</h4>
 
                         {sectionAssignments.length === 0 ? (
-
                           <p className="tm-instruction">
                             No teachers assigned yet.
                           </p>
-
                         ) : (
-
                           <div className="tm-review-list">
-
                             {sectionAssignments.map((mapping) => (
-
-                              <div
-                                className="tm-review-item"
-                                key={mapping.id}
-                              >
-
+                              <div className="tm-review-item" key={mapping.id}>
                                 <div>
                                   <strong>
-                                    {getSubjectName(mapping.subjectId)} {mapping.subjectCode ? `(${mapping.subjectCode})` : ""}
+                                    {getSubjectName(mapping.subjectId)}{" "}
+                                    {mapping.subjectCode
+                                      ? `(${mapping.subjectCode})`
+                                      : ""}
                                   </strong>
-
                                   <span>
-                                    {getTeacherName(mapping.teacherId)}{periodsLabel(mapping)}
+                                    {getTeacherName(mapping.teacherId)}
+                                    {periodsLabel(mapping)}
                                   </span>
                                 </div>
 
                                 <button
                                   className="tm-remove"
-                                  onClick={() =>
-                                    removeAssignment(mapping.id)
-                                  }
+                                  onClick={() => removeAssignment(mapping.id)}
                                 >
                                   <Trash2 size={17} />
                                   Remove
                                 </button>
-
                               </div>
-
                             ))}
-
                           </div>
-
                         )}
-
                       </div>
-
                     );
-
                   })}
 
                   {/* LEGACY ASSIGNMENTS */}
-
                   {legacyAssignments.length > 0 && (
-
                     <div className="tm-section-review">
-
                       <h4>Older assignments without sections</h4>
 
                       <p className="tm-instruction">
@@ -1769,56 +1574,39 @@ export default function TeacherMapping({ project, onSave }) {
                       </p>
 
                       <div className="tm-review-list">
-
                         {legacyAssignments.map((mapping) => (
-
-                          <div
-                            className="tm-review-item"
-                            key={mapping.id}
-                          >
-
+                          <div className="tm-review-item" key={mapping.id}>
                             <div>
                               <strong>
-                                {getSubjectName(mapping.subjectId)} {mapping.subjectCode ? `(${mapping.subjectCode})` : ""}
+                                {getSubjectName(mapping.subjectId)}{" "}
+                                {mapping.subjectCode
+                                  ? `(${mapping.subjectCode})`
+                                  : ""}
                               </strong>
-
                               <span>
-                                {getTeacherName(mapping.teacherId)}{periodsLabel(mapping)}
+                                {getTeacherName(mapping.teacherId)}
+                                {periodsLabel(mapping)}
                               </span>
                             </div>
 
                             <button
                               className="tm-remove"
-                              onClick={() =>
-                                removeAssignment(mapping.id)
-                              }
+                              onClick={() => removeAssignment(mapping.id)}
                             >
                               <Trash2 size={17} />
                               Remove
                             </button>
-
                           </div>
-
                         ))}
-
                       </div>
-
                     </div>
-
                   )}
-
                 </div>
-
               );
-
             })}
-
           </>
-
         )}
-
       </section>
-
     </div>
   );
 }

@@ -1,15 +1,19 @@
 /* =========================================================
-   School Setup — complete stylesheet
+   School Setup — JSX-aligned complete stylesheet
+   Matches SchoolSetup.jsx class names and controls
    ========================================================= */
 
 .school-setup-page {
+  width: 100%;
   max-width: 1100px;
   margin: 0 auto;
   padding: 36px;
+  box-sizing: border-box;
+  color: #303449;
+  font-family: inherit;
 }
 
-/* ---------------- Header ---------------- */
-
+/* Header */
 .setup-header {
   display: flex;
   justify-content: space-between;
@@ -19,75 +23,88 @@
 }
 
 .setup-eyebrow {
+  margin-bottom: 10px;
+  color: #6254dc;
   font-size: 10px;
   font-weight: 700;
-  color: #6254dc;
   letter-spacing: 1.3px;
-  margin-bottom: 10px;
+  text-transform: uppercase;
 }
 
 .setup-header h1 {
-  font-size: 26px;
   margin: 0;
   color: #20243a;
+  font-size: 26px;
+  font-weight: 700;
   letter-spacing: -0.3px;
+  line-height: 1.25;
 }
 
 .setup-header p {
+  margin: 8px 0 0;
   color: #85899c;
   font-size: 13px;
-  margin-top: 8px;
+  line-height: 1.5;
 }
 
-/* ---------------- Save indicator ---------------- */
-
+/* Save indicator: JSX renders .saving while saving and aria-live */
 .save-indicator {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  color: #269875;
-  background: #eaf8f1;
   padding: 9px 13px;
   border-radius: 20px;
+  background: #eaf8f1;
+  color: #269875;
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-/* Amber state while the debounced save is in flight. */
 .save-indicator.saving,
 .save-indicator[data-status="saving"] {
-  color: #92400e;
   background: #fef3c7;
+  color: #92400e;
 }
 
-/* ---------------- Progress ---------------- */
+.save-indicator[aria-live] {
+  min-height: 18px;
+}
 
+/* Progress */
 .setup-progress {
   height: 6px;
-  background: #e8e7f1;
-  border-radius: 10px;
   margin-bottom: 25px;
   overflow: hidden;
+  border-radius: 10px;
+  background: #e8e7f1;
 }
 
 .setup-progress-active {
   width: 12.5%;
   height: 100%;
-  background: #6051d7;
   border-radius: 10px;
+  background: #6051d7;
   transition: width 0.3s ease;
 }
 
-/* ---------------- Card ---------------- */
+/* Error banner is inline-styled in JSX; these rules complement it */
+.setup-error-banner {
+  box-sizing: border-box;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 
+/* Cards */
 .setup-card {
-  background: #ffffff;
+  margin-bottom: 20px;
+  padding: 25px;
   border: 1px solid #e9eaf0;
   border-radius: 13px;
-  padding: 25px;
-  margin-bottom: 20px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(32, 36, 58, 0.025);
 }
 
 .setup-card-heading {
@@ -98,30 +115,32 @@
 }
 
 .setup-icon {
+  display: grid;
+  flex: 0 0 43px;
   width: 43px;
   height: 43px;
-  display: grid;
   place-items: center;
-  color: #5c50d3;
-  background: #f0eeff;
   border-radius: 10px;
-  flex-shrink: 0;
+  background: #f0eeff;
+  color: #5c50d3;
 }
 
 .setup-card-heading h2 {
-  font-size: 15px;
   margin: 0;
   color: #20243a;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .setup-card-heading p {
+  margin: 5px 0 0;
   color: #9295a5;
   font-size: 11px;
-  margin: 5px 0 0;
+  line-height: 1.5;
 }
 
-/* ---------------- Form grid ---------------- */
-
+/* Form layout */
 .setup-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -134,29 +153,32 @@
 
 .setup-field {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 8px;
-  min-width: 0;
 }
 
 .setup-field label {
+  color: #44485c;
   font-size: 12px;
   font-weight: 600;
-  color: #44485c;
+  line-height: 1.4;
 }
 
 .setup-field input,
 .setup-field select,
 .setup-field textarea {
-  width: 100%;
   box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   border: 1px solid #dedfea;
   border-radius: 8px;
   padding: 12px;
   background: #fff;
   color: #303449;
-  font-size: 12px;
   font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -172,6 +194,12 @@
   line-height: 1.5;
 }
 
+.setup-field input::placeholder,
+.setup-field textarea::placeholder {
+  color: #a0a3b2;
+  opacity: 1;
+}
+
 .setup-field input:focus,
 .setup-field select:focus,
 .setup-field textarea:focus {
@@ -180,13 +208,23 @@
   border-color: #7465e0;
 }
 
+.setup-field input:focus-visible,
+.setup-field select:focus-visible,
+.setup-field textarea:focus-visible {
+  box-shadow: 0 0 0 3px rgba(116, 101, 224, 0.1);
+}
+
 .setup-field input[type="number"],
-.setup-field input[type="text"][inputmode="numeric"] {
+.setup-field input[inputmode="numeric"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------------- Working days ---------------- */
+/* Academic year field occupies its natural card width */
+.setup-card > .setup-field {
+  max-width: 100%;
+}
 
+/* Working days */
 .working-days {
   display: flex;
   flex-wrap: wrap;
@@ -194,7 +232,7 @@
 }
 
 .day-option {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 11px 14px;
@@ -204,13 +242,14 @@
   color: #70748a;
   font-size: 12px;
   cursor: pointer;
+  user-select: none;
   transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .day-option:hover {
   border-color: #bdb5ff;
-  color: #5548ce;
   background: #f7f5ff;
+  color: #5548ce;
 }
 
 .day-option:focus-within {
@@ -219,21 +258,22 @@
   border-color: #7465e0;
 }
 
-.day-option input {
-  accent-color: #6051d7;
+.day-option input[type="checkbox"] {
   width: 15px;
   height: 15px;
+  margin: 0;
+  accent-color: #6051d7;
   cursor: pointer;
 }
 
 .day-option.day-selected {
-  background: #f1efff;
   border-color: #bdb5ff;
+  background: #f1efff;
   color: #5548ce;
+  font-weight: 600;
 }
 
-/* ---------------- Bottom action bar ---------------- */
-
+/* Buttons: classes used directly by JSX */
 .setup-bottom {
   display: flex;
   justify-content: space-between;
@@ -244,6 +284,7 @@
 
 .setup-bottom-right {
   display: flex;
+  align-items: center;
   gap: 10px;
 }
 
@@ -254,12 +295,15 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 8px;
+  min-height: 40px;
   padding: 11px 16px;
+  border-radius: 8px;
+  font-family: inherit;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.2;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .setup-back-button:focus-visible,
@@ -307,8 +351,8 @@
 }
 
 .setup-continue-button:hover:not(:disabled) {
-  background: #493bc2;
   border-color: #493bc2;
+  background: #493bc2;
 }
 
 .setup-back-button:active:not(:disabled),
@@ -317,8 +361,14 @@
   transform: translateY(1px);
 }
 
-/* ---------------- Responsive ---------------- */
+/* Last-saved text is inline-styled in JSX */
+.school-setup-page > p[aria-live="polite"] {
+  margin: 12px 0 0;
+  color: #777b8d;
+  line-height: 1.5;
+}
 
+/* Responsive */
 @media (max-width: 700px) {
   .school-setup-page {
     padding: 22px 15px;
@@ -330,7 +380,7 @@
   }
 
   .setup-form-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .full-width {
@@ -367,10 +417,21 @@
     width: 100%;
     justify-content: center;
   }
+
+  .working-days {
+    gap: 8px;
+  }
+
+  .day-option {
+    padding: 10px 12px;
+  }
+
+  .save-indicator {
+    align-self: flex-start;
+  }
 }
 
-/* ---------------- Reduced motion ---------------- */
-
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .setup-progress-active,
   .setup-back-button,
@@ -388,12 +449,12 @@
   }
 }
 
-/* ---------------- Print ---------------- */
-
+/* Print */
 @media print {
   .school-setup-page {
-    padding: 0;
     max-width: none;
+    padding: 0;
+    color: #000;
   }
 
   .save-indicator,
@@ -407,8 +468,8 @@
   }
 
   .setup-card {
-    border-color: #999;
     break-inside: avoid;
+    border-color: #999;
     box-shadow: none;
   }
 
@@ -417,6 +478,7 @@
   .setup-field textarea {
     border: 1px solid #ccc;
     background: #fafafa;
+    color: #000;
   }
 
   .day-option {

@@ -1,13 +1,5 @@
-
-import { useEffect, useRef, useState } from "react";
-import {
-  BookOpen,
-  Check,
-  Search,
-  X,
-  Layers,
-  RotateCcw,
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BookOpen, Check, Search, X, Layers } from "lucide-react";
 
 import "../styles/class-subject-mapping.css";
 
@@ -18,32 +10,56 @@ function createId() {
   );
 }
 
-function ClassSubjectMapping({
-  project,
-  onSave,
-  onSaveSubjects,
-}) {
+function normalizeMappings(value, classes, subjects) {
+  if (!Array.isArray(value)) return [];
+
+  const classIds = new Set(classes.map((item) => item.id));
+  const subjectIds = new Set(subjects.map((item) => item.id));
+  const seen = new Set();
+
+  return value.reduce((result, mapping) => {
+    if (
+      !mapping ||
+      !classIds.has(mapping.classId) ||
+      !subjectIds.has(mapping.subjectId)
+    ) {
+      return result;
+    }
+
+    const key = `${mapping.classId}::${mapping.subjectId}`;
+    if (seen.has(key)) return result;
+    seen.add(key);
+
+    const rawPeriods = Number(mapping.periodsPerWeek);
+    const periodsPerWeek =
+      Number.isFinite(rawPeriods) && rawPeriods >= 0
+        ? Math.floor(rawPeriods)
+        : 0;
+
+    result.push({
+      ...mapping,
+      id: mapping.id || createId(),
+      periodsPerWeek,
+    });
+    return result;
+  }, []);
+}
+
+function ClassSubjectMapping({ project, onSave, onSaveSubjects }) {
   const classes = (project?.data?.classes || []).filter(
-    (item) => item.active !== false
+    (item) => item?.active !== false && item?.id
   );
-
   const subjects = (project?.data?.subjects || []).filter(
-    (item) => item.active !== false
+    (item) => item?.active !== false && item?.id
   );
 
-  const savedMappings = project?.data?.mappings || [];
+  const projectId = project?.id;
+  const normalizedSavedMappings = useMemo(
+    () => normalizeMappings(project?.data?.mappings, classes, subjects),
+    [project?.data?.mappings, classes, subjects]
+  );
 
-  const [mappings, setMappings] = useState(savedMappings);
-  // Reload class-subject mappings when switching school projects
-useEffect(() => {
-  setMappings(project?.data?.mappings || []);
-  setSelectedSubjectId("");
-  setSelectedClassIds([]);
-  setPeriodValues({});
-  setSearchText("");
-  setActiveView("subject");
-  setNotice("");
-}, [project?.id]);
+  const [mappings, setMappings] = useState(normalizedSavedMappings);
   const [selectedSubjectId, setSelectedSubjectId] = useState("");
   const [selectedClassIds, setSelectedClassIds] = useState([]);
   const [periodValues, setPeriodValues] = useState({});
@@ -52,47 +68,73 @@ useEffect(() => {
   const [notice, setNotice] = useState("");
 
   const onSaveRef = useRef(onSave);
+  const activeProjectIdRef = useRef(projectId);
+  const saveInitializedRef = useRef(false);
 
   useEffect(() => {
     onSaveRef.current = onSave;
   }, [onSave]);
 
-  // Automatically save mappings to the selected project.
+  // Prevent a pending debounce from saving the previous project's mappings
+  // into the newly selected project.
   useEffect(() => {
+    activeProjectIdRef.current = projectId;
+    setMappings(normalizedSavedMappings);
+    setSelectedSubjectId("");
+    setSelectedClassIds([]);
+    setPeriodValues({});
+    setSearchText("");
+    setActiveView("subject");
+    setNotice("");
+    saveInitializedRef.current = false;
+  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    if (!saveInitializedRef.current) {
+      saveInitializedRef.current = true;
+      return;
+    }
+
+    const projectIdAtSchedule = projectId;
     const timer = setTimeout(() => {
+      if (activeProjectIdRef.current !== projectIdAtSchedule) return;
       onSaveRef.current?.(mappings);
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [mappings, project?.id]);
+  }, [mappings, projectId]);
 
   const selectedSubject = subjects.find(
     (subject) => subject.id === selectedSubjectId
   );
 
   const filteredClasses = classes.filter((item) =>
-    item.name.toLowerCase().includes(searchText.toLowerCase())
+    String(item.name || "").toLowerCase().includes(searchText.trim().toLowerCase())
   );
 
-  const totalMappings = mappings.filter(
+  const validMappings = mappings.filter(
     (mapping) =>
       classes.some((item) => item.id === mapping.classId) &&
       subjects.some((item) => item.id === mapping.subjectId)
-  ).length;
+  );
+
+  const totalMappings = validMappings.length;
 
   function getClassSubjects(classId) {
-    return mappings
+    return validMappings
       .filter((mapping) => mapping.classId === classId)
-      .map((mapping) =>
-        subjects.find((subject) => subject.id === mapping.subjectId)
-      )
-      .filter(Boolean);
+      .map((mapping) => ({
+        mapping,
+        subject: subjects.find((subject) => subject.id === mapping.subjectId),
+      }))
+      .filter((item) => item.subject);
   }
 
   function getSelectedCount() {
     if (!selectedSubjectId) return 0;
-
-    return mappings.filter(
+    return validMappings.filter(
       (mapping) => mapping.subjectId === selectedSubjectId
     ).length;
   }
@@ -103,92 +145,121 @@ useEffect(() => {
         ? previous.filter((id) => id !== classId)
         : [...previous, classId]
     );
+    setNotice("");
   }
 
   function updatePeriodValue(classId, value) {
-  if (value === "") {
-    setPeriodValues((previous) => ({ ...previous, [classId]: "" }));
-    return;
+    if (value === "") {
+      setPeriodValues((previous) => ({ ...previous, [classId]: "" }));
+      return;
+    }
+
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0 || !Number.isInteger(number)) {
+      return;
+    }
+
+    // A defensive ceiling avoids accidental huge values; the school can
+    // change this limit if its timetable has an unusual weekly structure.
+    if (number > 60) {
+      setNotice("Periods/week cannot exceed 60.");
+      return;
+    }
+
+    setPeriodValues((previous) => ({ ...previous, [classId]: number }));
+    setNotice("");
   }
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) return;
-  setPeriodValues((previous) => ({ ...previous, [classId]: Math.floor(n) }));
-}
+
   function selectAllClasses() {
-    setSelectedClassIds(filteredClasses.map((item) => item.id));
+    setSelectedClassIds((previous) => {
+      const merged = new Set(previous);
+      filteredClasses.forEach((item) => merged.add(item.id));
+      return [...merged];
+    });
+    setNotice("");
   }
 
   function clearSelection() {
     setSelectedClassIds([]);
+    setNotice("");
   }
 
   function assignSubject() {
-    if (!selectedSubjectId) {
+    if (!selectedSubject) {
       setNotice("Please select a subject first.");
       return;
     }
 
-    if (selectedClassIds.length === 0) {
-      setNotice("Please select at least one class.");
+    const targetClassIds = selectedClassIds.filter((id) =>
+      classes.some((item) => item.id === id)
+    );
+
+    if (targetClassIds.length === 0) {
+      setNotice("Please select at least one active class.");
       return;
     }
 
-    const updatedMappings = selectedClassIds.map((classId) => {
-  const existingMapping = mappings.find(
-    (mapping) =>
-      mapping.classId === classId &&
-      mapping.subjectId === selectedSubjectId
-  );
+    const assignments = targetClassIds.map((classId) => {
+      const existing = mappings.find(
+        (mapping) =>
+          mapping.classId === classId &&
+          mapping.subjectId === selectedSubjectId
+      );
 
-  const periods =
-    periodValues[classId] ??
-    existingMapping?.periodsPerWeek ??
-    0;
+      const enteredPeriods = periodValues[classId];
+      const periods =
+        enteredPeriods === "" || enteredPeriods === undefined
+          ? existing?.periodsPerWeek ?? 0
+          : enteredPeriods;
 
-  if (existingMapping) {
-    return {
-      ...existingMapping,
-      periodsPerWeek: periods,
-    };
-  }
+      if (!Number.isInteger(periods) || periods < 0 || periods > 60) {
+        return null;
+      }
 
-  return {
-    id: createId(),
-    classId,
-    subjectId: selectedSubjectId,
-    periodsPerWeek: periods,
-  };
-});
+      return {
+        ...(existing || {}),
+        id: existing?.id || createId(),
+        classId,
+        subjectId: selectedSubjectId,
+        periodsPerWeek: periods,
+      };
+    });
 
-setMappings((previous) => [
-  ...previous.filter(
-    (mapping) => !selectedClassIds.includes(mapping.classId) ||
-      mapping.subjectId !== selectedSubjectId
-  ),
-  ...updatedMappings,
-]);
+    if (assignments.some((item) => item === null)) {
+      setNotice("Enter a valid whole number from 0 to 60 for periods/week.");
+      return;
+    }
 
-setNotice(
-  `${selectedSubject.name} allocation saved for ${selectedClassIds.length} class(es).`
-);
+    setMappings((previous) => {
+      const selectedIds = new Set(targetClassIds);
+      return [
+        ...previous.filter(
+          (mapping) =>
+            !(selectedIds.has(mapping.classId) &&
+              mapping.subjectId === selectedSubjectId)
+        ),
+        ...assignments,
+      ];
+    });
 
-setSelectedClassIds([]);
+    setNotice(
+      `${selectedSubject.name} allocation saved for ${targetClassIds.length} class(es).`
+    );
+    setSelectedClassIds([]);
   }
 
   function removeSubjectFromSelectedClasses() {
-    if (!selectedSubjectId || selectedClassIds.length === 0) {
+    if (!selectedSubject || selectedClassIds.length === 0) {
       setNotice("Select a subject and at least one class.");
       return;
     }
 
+    const selectedIds = new Set(selectedClassIds);
     const updated = mappings.filter(
       (mapping) =>
-        !(
-          mapping.subjectId === selectedSubjectId &&
-          selectedClassIds.includes(mapping.classId)
-        )
+        !(mapping.subjectId === selectedSubjectId &&
+          selectedIds.has(mapping.classId))
     );
-
     const removedCount = mappings.length - updated.length;
 
     if (removedCount === 0) {
@@ -198,28 +269,22 @@ setSelectedClassIds([]);
 
     setMappings(updated);
     setSelectedClassIds([]);
-
     setNotice(
       `${selectedSubject.name} removed from ${removedCount} class(es).`
     );
   }
 
   function removeSingleMapping(classId, subjectId) {
+    const className = classes.find((item) => item.id === classId)?.name || "";
+    const subjectName = subjects.find((item) => item.id === subjectId)?.name || "Subject";
+
     setMappings((previous) =>
       previous.filter(
         (mapping) =>
-          !(
-            mapping.classId === classId &&
-            mapping.subjectId === subjectId
-          )
+          !(mapping.classId === classId && mapping.subjectId === subjectId)
       )
     );
-
-    const className = classes.find(
-      (item) => item.id === classId
-    )?.name;
-
-    setNotice(`Subject removed from Class ${className}.`);
+    setNotice(`${subjectName} removed from Class ${className}.`);
   }
 
   return (
@@ -227,11 +292,8 @@ setSelectedClassIds([]);
       <div className="mapping-header">
         <div>
           <h1>Class–Subject Mapping</h1>
-          <p>
-            Assign subjects to classes in bulk or review assignments class-wise.
-          </p>
+          <p>Assign subjects to classes in bulk or review assignments class-wise.</p>
         </div>
-
         <div className="mapping-project-badge">
           <BookOpen size={15} />
           {project?.schoolName || "School Project"}
@@ -243,12 +305,10 @@ setSelectedClassIds([]);
           <span>Active Classes</span>
           <strong>{classes.length}</strong>
         </div>
-
         <div className="mapping-summary-card">
           <span>Available Subjects</span>
           <strong>{subjects.length}</strong>
         </div>
-
         <div className="mapping-summary-card">
           <span>Total Assignments</span>
           <strong>{totalMappings}</strong>
@@ -264,7 +324,6 @@ setSelectedClassIds([]);
           <Layers size={16} />
           Subject-wise Assignment
         </button>
-
         <button
           type="button"
           className={activeView === "class" ? "mapping-tab-active" : ""}
@@ -281,9 +340,7 @@ setSelectedClassIds([]);
             <div className="mapping-panel-heading">
               <div>
                 <h2>1. Select Subject</h2>
-                <p>
-                  Choose one subject to assign it to multiple classes.
-                </p>
+                <p>Choose one subject to assign it to multiple classes.</p>
               </div>
             </div>
 
@@ -298,10 +355,9 @@ setSelectedClassIds([]);
                     type="button"
                     key={subject.id}
                     className={`mapping-subject-option ${
-                      selectedSubjectId === subject.id
-                        ? "mapping-subject-selected"
-                        : ""
+                      selectedSubjectId === subject.id ? "mapping-subject-selected" : ""
                     }`}
+                    aria-pressed={selectedSubjectId === subject.id}
                     onClick={() => {
                       setSelectedSubjectId(subject.id);
                       setSelectedClassIds([]);
@@ -315,12 +371,8 @@ setSelectedClassIds([]);
                         <BookOpen size={17} />
                       )}
                     </span>
-
                     <strong>{subject.name}</strong>
-
-                    {subject.shortName && (
-                      <small>{subject.shortName}</small>
-                    )}
+                    {subject.shortName && <small>{subject.shortName}</small>}
                   </button>
                 ))}
               </div>
@@ -347,84 +399,74 @@ setSelectedClassIds([]);
                   value={searchText}
                   onChange={(event) => setSearchText(event.target.value)}
                   placeholder="Search classes..."
+                  aria-label="Search classes"
                 />
               </div>
-
-              <button type="button" onClick={selectAllClasses}>
+              <button type="button" onClick={selectAllClasses} disabled={!filteredClasses.length}>
                 Select All
               </button>
-
-              <button type="button" onClick={clearSelection}>
+              <button type="button" onClick={clearSelection} disabled={!selectedClassIds.length}>
                 Clear
               </button>
             </div>
 
             {classes.length === 0 ? (
-              <div className="mapping-empty">
-                No active classes found. Configure classes first.
-              </div>
+              <div className="mapping-empty">No active classes found. Configure classes first.</div>
+            ) : filteredClasses.length === 0 ? (
+              <div className="mapping-empty">No classes match your search.</div>
             ) : (
               <div className="mapping-class-grid">
                 {filteredClasses.map((item) => {
-  const existingMapping = mappings.find(
-    (mapping) =>
-      mapping.classId === item.id &&
-      mapping.subjectId === selectedSubjectId
-  );
+                  const existingMapping = mappings.find(
+                    (mapping) =>
+                      mapping.classId === item.id &&
+                      mapping.subjectId === selectedSubjectId
+                  );
+                  const selected = selectedClassIds.includes(item.id);
 
-  const alreadyAssigned = Boolean(existingMapping);
-
-  return (
-    <div
-      key={item.id}
-      className={`mapping-class-option ${
-        selectedClassIds.includes(item.id)
-          ? "mapping-class-selected"
-          : ""
-      }`}
-    >
-      <input
-        type="checkbox"
-        checked={selectedClassIds.includes(item.id)}
-        onChange={() => toggleClass(item.id)}
-      />
-
-      <span>
-        <strong>{item.name}</strong>
-        <small>
-          {item.sections?.length || 0} section(s)
-        </small>
-      </span>
-
-      {alreadyAssigned && (
-        <span className="mapping-assigned-tag">
-          Assigned
-        </span>
-      )}
-
-      <div className="mapping-period-input">
-        <label htmlFor={`periods-${item.id}`}>
-          Periods/week
-        </label>
-
-        <input
-          id={`periods-${item.id}`}
-          type="number"
-          min="0"
-          step="1"
-          value={
-            periodValues[item.id] ??
-            existingMapping?.periodsPerWeek ??
-            0
-          }
-          onChange={(event) =>
-            updatePeriodValue(item.id, event.target.value)
-          }
-        />
-      </div>
-    </div>
-  );
-})}
+                  return (
+                    <div
+                      key={item.id}
+                      className={`mapping-class-option ${
+                        selected ? "mapping-class-selected" : ""
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleClass(item.id)}
+                        aria-label={`Select class ${item.name}`}
+                      />
+                      <span>
+                        <strong>{item.name}</strong>
+                        <small>{item.sections?.length || 0} section(s)</small>
+                      </span>
+                      {existingMapping && (
+                        <span className="mapping-assigned-tag">Assigned</span>
+                      )}
+                      <div className="mapping-period-input">
+                        <label htmlFor={`periods-${item.id}`}>Periods/week</label>
+                        <input
+                          id={`periods-${item.id}`}
+                          type="number"
+                          min="0"
+                          max="60"
+                          step="1"
+                          inputMode="numeric"
+                          value={
+                            periodValues[item.id] ??
+                            existingMapping?.periodsPerWeek ??
+                            0
+                          }
+                          onChange={(event) =>
+                            updatePeriodValue(item.id, event.target.value)
+                          }
+                          aria-label={`Periods per week for class ${item.name}`}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -442,7 +484,6 @@ setSelectedClassIds([]);
                 <Check size={16} />
                 Assign Subject
               </button>
-
               <button
                 type="button"
                 className="mapping-remove-btn"
@@ -459,8 +500,8 @@ setSelectedClassIds([]);
             <section className="mapping-panel">
               <h2>3. Current Assignment Summary</h2>
               <p>
-                <strong>{selectedSubject.name}</strong> is currently assigned
-                to {getSelectedCount()} class(es).
+                <strong>{selectedSubject.name}</strong> is currently assigned to{" "}
+                {getSelectedCount()} class(es).
               </p>
             </section>
           )}
@@ -472,55 +513,45 @@ setSelectedClassIds([]);
           <div className="mapping-panel-heading">
             <div>
               <h2>Class-wise Subject Review</h2>
-              <p>
-                Review and remove subjects assigned to each class.
-              </p>
+              <p>Review and remove subjects assigned to each class.</p>
             </div>
           </div>
 
           {classes.length === 0 ? (
-            <div className="mapping-empty">
-              No active classes found.
-            </div>
+            <div className="mapping-empty">No active classes found.</div>
           ) : (
             <div className="mapping-review-list">
               {classes.map((item) => {
                 const classSubjects = getClassSubjects(item.id);
-
                 return (
                   <div className="mapping-review-card" key={item.id}>
                     <div className="mapping-review-heading">
                       <div>
                         <h3>Class {item.name}</h3>
-                        <span>
-                          {item.sections?.length || 0} section(s)
-                        </span>
+                        <span>{item.sections?.length || 0} section(s)</span>
                       </div>
-
                       <span className="mapping-review-count">
                         {classSubjects.length} subject(s)
                       </span>
                     </div>
 
                     {classSubjects.length === 0 ? (
-                      <p className="mapping-no-subjects">
-                        No subjects assigned yet.
-                      </p>
+                      <p className="mapping-no-subjects">No subjects assigned yet.</p>
                     ) : (
                       <div className="mapping-review-subjects">
-                        {classSubjects.map((subject) => (
-                          <div
-                            className="mapping-review-subject"
-                            key={subject.id}
-                          >
-                            <span>{subject.name}</span>
-
+                        {classSubjects.map(({ mapping, subject }) => (
+                          <div className="mapping-review-subject" key={mapping.id}>
+                            <span>
+                              {subject.name}
+                              <small>
+                                {mapping.periodsPerWeek} period(s)/week
+                              </small>
+                            </span>
                             <button
                               type="button"
-                              title="Remove subject"
-                              onClick={() =>
-                                removeSingleMapping(item.id, subject.id)
-                              }
+                              title={`Remove ${subject.name} from Class ${item.name}`}
+                              aria-label={`Remove ${subject.name} from Class ${item.name}`}
+                              onClick={() => removeSingleMapping(item.id, subject.id)}
                             >
                               <X size={15} />
                             </button>
@@ -537,7 +568,7 @@ setSelectedClassIds([]);
       )}
 
       {notice && (
-        <div className="mapping-notice" role="status">
+        <div className="mapping-notice" role="status" aria-live="polite">
           {notice}
         </div>
       )}

@@ -1,5 +1,4 @@
-
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Users,
   Plus,
@@ -22,7 +21,7 @@ function createId() {
 }
 
 function parseTeacherInput(input) {
-  return input
+  return String(input || "")
     .split(/[,\n]+/)
     .map((entry) => entry.trim())
     .filter(Boolean)
@@ -44,8 +43,8 @@ function parseTeacherInput(input) {
 }
 
 function TeacherLibrary({ project, onSave }) {
-  const [teachers, setTeachers] = useState(
-    project?.data?.teachers || []
+  const [teachers, setTeachers] = useState(() =>
+    Array.isArray(project?.data?.teachers) ? project.data.teachers.map((t) => ({ ...t, id: String(t.id ?? createId()), name: String(t.name ?? "").trim(), nickname: String(t.nickname ?? "").trim(), active: t.active !== false })) : []
   );
 
   const [bulkInput, setBulkInput] = useState("");
@@ -55,68 +54,156 @@ function TeacherLibrary({ project, onSave }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editNickname, setEditNickname] = useState("");
+  const [saveStatus, setSaveStatus] = useState("Saved");
 
+  // -------------------- Save infrastructure --------------------
   const onSaveRef = useRef(onSave);
+  const isFirstRender = useRef(true);
+  const isFirstMount = useRef(true);
+  const lastProjectIdRef = useRef(project?.id);
+  const pendingSaveRef = useRef(null);
 
   useEffect(() => {
     onSaveRef.current = onSave;
   }, [onSave]);
 
-  // Automatically save teachers to the current project.
+  // Flush any pending debounced save BEFORE the project switch resets state.
+  // Runs in the layout phase so it always fires before passive effects.
+  useLayoutEffect(() => {
+    if (lastProjectIdRef.current === project?.id) return;
+
+    if (pendingSaveRef.current) {
+      clearTimeout(pendingSaveRef.current.timerId);
+      const { data, onSave: saveFn } = pendingSaveRef.current;
+      pendingSaveRef.current = null;
+      try { Promise.resolve(saveFn?.(data)).then(() => setSaveStatus("Saved")).catch(() => setSaveStatus("Save failed")); } catch { setSaveStatus("Save failed"); }
+    }
+
+    lastProjectIdRef.current = project?.id;
+  }, [project?.id]);
+
+  // Reload data when the selected project changes (defensive — the parent
+  // normally uses key remount, but this keeps the component robust if that
+  // ever changes).
   useEffect(() => {
-    const timer = setTimeout(() => {
-      onSaveRef.current?.(teachers);
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+
+    setTeachers(
+      Array.isArray(project?.data?.teachers) ? project.data.teachers.map((t) => ({ ...t, id: String(t.id ?? createId()), name: String(t.name ?? "").trim(), nickname: String(t.nickname ?? "").trim(), active: t.active !== false })) : []
+    );
+    setBulkInput("");
+    setSearchText("");
+    setShowArchived(false);
+    setNotice("");
+    setSaveStatus("Saved");
+    setEditingId(null);
+    setEditName("");
+    setEditNickname("");
+
+    // The next state-triggered save would persist the freshly loaded data
+    // back to the store; skip it.
+    isFirstRender.current = true;
+  }, [project?.id]);
+
+  // Debounced auto-save with unmount flush.
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    // Defensive — earlier cleanup should have already cleared this.
+    if (pendingSaveRef.current) {
+      clearTimeout(pendingSaveRef.current.timerId);
+      pendingSaveRef.current = null;
+    }
+
+    const data = teachers;
+    const saveFn = onSaveRef.current;
+    setSaveStatus("Saving…");
+    const timerId = setTimeout(() => {
+      pendingSaveRef.current = null;
+      try {
+        Promise.resolve(saveFn?.(data)).then(() => setSaveStatus("Saved")).catch(() => setSaveStatus("Save failed"));
+      } catch {
+        setSaveStatus("Save failed");
+      }
     }, 500);
 
-    return () => clearTimeout(timer);
-  }, [teachers, project?.id]);
+    pendingSaveRef.current = { data, onSave: saveFn, timerId };
 
-  const preview = parseTeacherInput(bulkInput);
+    return () => clearTimeout(timerId);
+  }, [teachers]);
 
-  const activeTeachers = teachers.filter(
-    (teacher) => teacher.active !== false
+  // Flush any pending save on unmount so navigation never loses work.
+  useEffect(() => {
+    return () => {
+      if (pendingSaveRef.current) {
+        clearTimeout(pendingSaveRef.current.timerId);
+        try { pendingSaveRef.current.onSave?.(pendingSaveRef.current.data); } catch { /* parent save error */ }
+        pendingSaveRef.current = null;
+      }
+    };
+  }, []);
+
+  // -------------------- Derived data --------------------
+  const preview = useMemo(() => parseTeacherInput(bulkInput), [bulkInput]);
+
+  const previewRows = useMemo(() => {
+    return preview.map((entry, index) => {
+      if (!entry.name || !entry.nickname) {
+        return { ...entry, status: "Incomplete" };
+      }
+
+      const normalized = entry.name.trim().toLocaleLowerCase();
+      const isDuplicateInPreview =
+        preview.findIndex(
+          (t) => String(t.name || "").trim().toLocaleLowerCase() === normalized
+        ) !== index;
+      const isExisting = teachers.some(
+        (t) =>
+          t.active !== false &&
+          String(t.name || "").trim().toLowerCase() === normalized
+      );
+
+      return {
+        ...entry,
+        status: isDuplicateInPreview || isExisting ? "Duplicate" : "Valid",
+      };
+    });
+  }, [preview, teachers]);
+
+  const validCount = useMemo(
+    () => previewRows.filter((r) => r.status === "Valid").length,
+    [previewRows]
   );
 
-  const archivedTeachers = teachers.filter(
-    (teacher) => teacher.active === false
+  const activeTeachers = useMemo(
+    () => teachers.filter((t) => t.active !== false),
+    [teachers]
   );
 
-  const displayedTeachers = teachers
-    .filter((teacher) =>
-      showArchived
-        ? teacher.active === false
-        : teacher.active !== false
-    )
-    .filter((teacher) =>
-      `${teacher.name} ${teacher.nickname || ""}`
-        .toLowerCase()
-        .includes(searchText.toLowerCase())
-    );
-
-  const duplicateNames = preview.filter((teacher, index) => {
-    const normalized = teacher.name.toLowerCase();
-
-    return (
-      preview.findIndex(
-        (item) => item.name.toLowerCase() === normalized
-      ) !== index ||
-      teachers.some(
-        (existing) =>
-          existing.active !== false &&
-          existing.name.toLowerCase() === normalized
-      )
-    );
-  });
-
-  const invalidEntries = preview.filter(
-    (teacher) => !teacher.name || !teacher.nickname
+  const archivedTeachers = useMemo(
+    () => teachers.filter((t) => t.active === false),
+    [teachers]
   );
 
-  const validCount =
-    preview.length -
-    duplicateNames.length -
-    invalidEntries.length;
+  const displayedTeachers = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    return teachers
+      .filter((t) => (showArchived ? t.active === false : t.active !== false))
+      .filter((t) => {
+        if (!q) return true;
+        const haystack = `${t.name || ""} ${t.nickname || ""}`.toLowerCase();
+        return haystack.includes(q);
+      })
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }));
+  }, [teachers, showArchived, searchText]);
 
+  // -------------------- Actions --------------------
   function addTeachers() {
     if (preview.length === 0) {
       setNotice("Please enter teacher names first.");
@@ -125,8 +212,9 @@ function TeacherLibrary({ project, onSave }) {
 
     const existingNames = new Set(
       teachers
-        .filter((teacher) => teacher.active !== false)
-        .map((teacher) => teacher.name.toLowerCase())
+        .filter((t) => t.active !== false)
+        .map((t) => String(t.name || "").trim().toLowerCase())
+        .filter(Boolean)
     );
 
     const added = [];
@@ -156,15 +244,16 @@ function TeacherLibrary({ project, onSave }) {
 
     if (added.length > 0) {
       setTeachers((previous) => [...previous, ...added]);
+      // Only clear input when something was actually added — otherwise the
+      // user loses their work-in-progress list.
+      setBulkInput("");
     }
-
-    setBulkInput("");
 
     setNotice(
       `${added.length} teacher(s) added successfully.` +
-      (skipped.length
-        ? ` ${skipped.length} entry/entries skipped.`
-        : "")
+        (skipped.length
+          ? ` ${skipped.length} entry/entries skipped.`
+          : "")
     );
   }
 
@@ -172,6 +261,7 @@ function TeacherLibrary({ project, onSave }) {
     setEditingId(teacher.id);
     setEditName(teacher.name);
     setEditNickname(teacher.nickname || "");
+    setNotice("");
   }
 
   function saveEdit() {
@@ -184,10 +274,10 @@ function TeacherLibrary({ project, onSave }) {
     }
 
     const duplicate = teachers.some(
-      (teacher) =>
-        teacher.id !== editingId &&
-        teacher.name.toLowerCase() === name.toLowerCase() &&
-        teacher.active !== false
+      (t) =>
+        String(t.id) !== String(editingId) &&
+        t.active !== false &&
+        String(t.name || "").trim().toLowerCase() === name.toLowerCase()
     );
 
     if (duplicate) {
@@ -196,15 +286,15 @@ function TeacherLibrary({ project, onSave }) {
     }
 
     setTeachers((previous) =>
-      previous.map((teacher) =>
-        teacher.id === editingId
+      previous.map((t) =>
+        String(t.id) === String(editingId)
           ? {
-              ...teacher,
+              ...t,
               name,
               nickname,
               updatedAt: new Date().toISOString(),
             }
-          : teacher
+          : t
       )
     );
 
@@ -217,13 +307,12 @@ function TeacherLibrary({ project, onSave }) {
       !window.confirm(
         `Archive ${teacher.name}? You can restore this teacher later.`
       )
-    ) return;
+    )
+      return;
 
     setTeachers((previous) =>
-      previous.map((item) =>
-        item.id === teacher.id
-          ? { ...item, active: false }
-          : item
+      previous.map((t) =>
+        String(t.id) === String(teacher.id) ? { ...t, active: false, updatedAt: new Date().toISOString() } : t
       )
     );
 
@@ -231,26 +320,35 @@ function TeacherLibrary({ project, onSave }) {
   }
 
   function restoreTeacher(teacher) {
+    const nameLower = String(teacher.name || "").trim().toLowerCase();
+    const collision = teachers.some(
+      (t) =>
+        String(t.id) !== String(teacher.id) &&
+        t.active !== false &&
+        String(t.name || "").trim().toLowerCase() === nameLower
+    );
+
+    if (collision) {
+      setNotice(
+        `Cannot restore "${teacher.name}" — an active teacher with this name already exists.`
+      );
+      return;
+    }
+
     setTeachers((previous) =>
-      previous.map((item) =>
-        item.id === teacher.id
-          ? { ...item, active: true }
-          : item
-      )
+      previous.map((t) => (String(t.id) === String(teacher.id) ? { ...t, active: true, updatedAt: new Date().toISOString() } : t))
     );
 
     setNotice(`${teacher.name} restored.`);
   }
 
+  // -------------------- Render --------------------
   return (
     <div className="teacher-library-page">
-
       <div className="teacher-library-header">
         <div>
           <h1>Teacher Library</h1>
-          <p>
-            Add and manage all teachers in your school.
-          </p>
+          <p>Add and manage all teachers in your school.</p>
         </div>
 
         <div className="teacher-library-project">
@@ -285,9 +383,7 @@ function TeacherLibrary({ project, onSave }) {
               <UserPlus size={20} />
               Add Multiple Teachers
             </h2>
-            <p>
-              Copy and paste your complete teacher list into one box.
-            </p>
+            <p>Copy and paste your complete teacher list into one box.</p>
           </div>
         </div>
 
@@ -306,14 +402,13 @@ function TeacherLibrary({ project, onSave }) {
         />
 
         <div className="teacher-input-help">
-          Separate teachers using commas or new lines.
-          Use NAME-NICKNAME format.
+          Separate teachers using commas or new lines. Use NAME-NICKNAME format.
         </div>
 
-        {preview.length > 0 && (
+        {previewRows.length > 0 && (
           <>
             <div className="teacher-preview-summary">
-              <strong>{preview.length} entries detected</strong>
+              <strong>{previewRows.length} entries detected</strong>
               <span>{validCount} valid entries</span>
             </div>
 
@@ -329,39 +424,26 @@ function TeacherLibrary({ project, onSave }) {
                 </thead>
 
                 <tbody>
-                  {preview.map((teacher, index) => {
-                    const invalid =
-                      !teacher.name || !teacher.nickname;
-
-                    const duplicate = duplicateNames.some(
-                      (item) =>
-                        item.name.toLowerCase() ===
-                        teacher.name.toLowerCase()
-                    );
-
-                    return (
-                      <tr key={index}>
-                        <td>{index + 1}</td>
-                        <td>{teacher.name || "Missing name"}</td>
-                        <td>{teacher.nickname || "Missing nickname"}</td>
-                        <td>
-                          {invalid ? (
-                            <span className="teacher-status-error">
-                              Incomplete
-                            </span>
-                          ) : duplicate ? (
-                            <span className="teacher-status-error">
-                              Duplicate
-                            </span>
-                          ) : (
-                            <span className="teacher-status-valid">
-                              Valid
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {previewRows.map((teacher, index) => (
+                    <tr key={index}>
+                      <td>{index + 1}</td>
+                      <td>{teacher.name || "Missing name"}</td>
+                      <td>{teacher.nickname || "Missing nickname"}</td>
+                      <td>
+                        {teacher.status === "Incomplete" ? (
+                          <span className="teacher-status-error">
+                            Incomplete
+                          </span>
+                        ) : teacher.status === "Duplicate" ? (
+                          <span className="teacher-status-error">
+                            Duplicate
+                          </span>
+                        ) : (
+                          <span className="teacher-status-valid">Valid</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -391,12 +473,9 @@ function TeacherLibrary({ project, onSave }) {
 
       {/* TEACHER LIST */}
       <section className="teacher-panel">
-
         <div className="teacher-list-heading">
           <div>
-            <h2>
-              {showArchived ? "Archived Teachers" : "Teacher List"}
-            </h2>
+            <h2>{showArchived ? "Archived Teachers" : "Teacher List"}</h2>
             <p>Search and manage your teacher records.</p>
           </div>
 
@@ -446,7 +525,7 @@ function TeacherLibrary({ project, onSave }) {
                   <tr key={teacher.id}>
                     <td>{index + 1}</td>
 
-                    {editingId === teacher.id ? (
+                    {String(editingId) === String(teacher.id) ? (
                       <>
                         <td>
                           <input
@@ -483,9 +562,7 @@ function TeacherLibrary({ project, onSave }) {
                       </>
                     ) : (
                       <>
-                        <td className="teacher-full-name">
-                          {teacher.name}
-                        </td>
+                        <td className="teacher-full-name">{teacher.name}</td>
                         <td>
                           <span className="teacher-nickname">
                             {teacher.nickname}
@@ -549,7 +626,6 @@ function TeacherLibrary({ project, onSave }) {
         <Check size={16} />
         Changes are saved automatically to this school project.
       </div>
-
     </div>
   );
 }

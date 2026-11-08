@@ -845,3 +845,177 @@
 .save-status:has(+ .guest-badge) {
   margin-right: 8px;
 }
+
+
+/* =========================================================
+   JSX ALIGNMENT PATCH — missing states and interaction polish
+   ========================================================= */
+
+/* Selected project card state used by Dashboard.jsx */
+.project-card.project-card-selected {
+  border-color: #8b80ed;
+  background: linear-gradient(135deg, #ffffff 0%, #faf9ff 100%);
+  box-shadow: 0 0 0 2px rgba(93, 80, 216, 0.08);
+}
+
+.project-card.project-card-selected .project-school-icon {
+  background: #e5e1ff;
+}
+
+/* Destructive project action button */
+.icon-button-danger {
+  color: #dc5a65;
+  border-radius: 8px;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.icon-button-danger:hover {
+  color: #b42332;
+  background: #fff0f1;
+}
+
+/* Ensure the interactive controls have visible keyboard focus */
+.nav-item:focus-visible,
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.action-card:focus-visible,
+.icon-button:focus-visible,
+.guest-card button:focus-visible,
+.mobile-menu-button:focus-visible,
+.mobile-close:focus-visible,
+.notice button:focus-visible {
+  outline: 3px solid rgba(99, 85, 220, 0.35);
+  outline-offset: 2px;
+}
+
+/* Shared transitions and safe text wrapping */
+.nav-item,
+.primary-button,
+.secondary-button,
+.icon-button {
+  transition: color 0.18s ease, background-color 0.18s ease,
+    border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.project-info h3,
+.project-info p,
+.project-info span,
+.step-item,
+.breadcrumb {
+  overflow-wrap: anywhere;
+}
+
+/* Save indicator variations (supports the JSX saved/error labels) */
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.save-status:has(+ .guest-badge) {
+  margin-right: 8px;
+}
+
+/* Notice button remains easy to tap */
+.notice button {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 6px;
+}
+
+.notice button:hover {
+  background: rgba(85, 72, 206, 0.08);
+}
+
+/* Modal layering and form layout */
+.modal-overlay {
+  overflow-y: auto;
+}
+
+.modal {
+  max-height: min(90vh, 760px);
+  overflow-y: auto;
+}
+
+.modal form {
+  gap: 0;
+}
+
+.modal-actions .primary-button,
+.modal-actions .secondary-button {
+  min-height: 40px;
+}
+
+/* Responsive project row handling */
+@media (max-width: 900px) {
+  .topbar {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+
+  .content {
+    padding: 28px 22px;
+  }
+
+  .project-card {
+    flex-wrap: wrap;
+  }
+
+  .project-info {
+    flex: 1 1 calc(100% - 70px);
+  }
+}
+
+@media (max-width: 700px) {
+  .topbar-right {
+    gap: 8px;
+  }
+
+  .save-status {
+    font-size: 10px;
+  }
+
+  .guest-badge {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+
+  .project-card {
+    gap: 10px;
+  }
+
+  .project-card .icon-button {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .progress-header {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .step-item {
+    gap: 8px;
+  }
+
+  .modal {
+    padding: 20px;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

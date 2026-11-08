@@ -261,7 +261,6 @@
 }
 .tt-builder-config-head h2 { font-size:17px; margin:0 0 5px; color:var(--tt-ink); }
 .tt-builder-config-head p,
-.tt-class-teacher-config p,
 .tt-fixed-config p { font-size:12px; color:var(--tt-muted); margin:0 0 12px; }
 
 .tt-builder-config-head button,
@@ -286,8 +285,7 @@
 
 /* Rule grid */
 .tt-config-grid { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin:10px 0 15px; }
-.tt-config-grid label,
-.tt-class-teacher-config label {
+.tt-config-grid label {
   display:flex; gap:8px; align-items:center; font-size:12px;
   font-weight:600; color:var(--tt-ink);
 }
@@ -396,7 +394,6 @@
 
 @media (max-width:700px) {
   .tt-builder-config { padding:11px; }
-  .tt-class-teacher-config label { width:100%; min-width:0; }
   .tt-fixed-row { display:grid; grid-template-columns:1fr; }
   .tt-fixed-row select { width:100%; max-width:none; }
 }
@@ -425,26 +422,135 @@
     animation: none !important;
   }
 }
-.tt-report {
-  margin-top: 14px;
-  padding: 12px 14px;
-  border: 1px solid #f0d79d;
-  background: #fff9e9;
-  color: #79520b;
-  border-radius: 9px;
-  font-size: 12px;
-  line-height: 1.6;
+
+
+/* =========================================================
+   ALIGNMENT PATCH — advanced TimetableBuilder JSX
+   These rules target classes present in the advanced component.
+   ========================================================= */
+
+/* Keep the configuration and action controls from overflowing
+   the main content area when the sidebar narrows the viewport. */
+.timetable-builder-page .tt-builder-config,
+.timetable-builder-page .tt-panel,
+.timetable-builder-page .tt-section-card {
+  min-width: 0;
+  max-width: 100%;
 }
-.tt-report > b {
-  display: block;
-  margin-bottom: 6px;
-  color: #573f06;
+
+.timetable-builder-page .tt-config-grid > *,
+.timetable-builder-page .tt-fixed-row > *,
+.timetable-builder-page .tt-header-actions > * {
+  min-width: 0;
 }
-.tt-report ul {
-  margin: 0;
-  padding-left: 18px;
+
+.timetable-builder-page .tt-fixed-row select {
+  flex: 1 1 150px;
 }
-.tt-report ul ul {
-  margin-top: 4px;
-  color: #8a640f;
+
+.timetable-builder-page .tt-fixed-row button {
+  flex: 0 0 auto;
+}
+
+/* Make the substitution view controls align in a consistent row
+   and wrap cleanly on tablet/mobile. */
+.timetable-builder-page .tt-sub-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.timetable-builder-page .tt-sub-controls label,
+.timetable-builder-page .tt-absent-picker {
+  min-width: 0;
+}
+
+.timetable-builder-page .tt-absent-picker select {
+  max-width: 100%;
+}
+
+.timetable-builder-page .tt-absent-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Tables must scroll horizontally as a unit rather than stretch
+   the parent layout. */
+.timetable-builder-page .tt-table-wrap {
+  max-width: 100%;
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.timetable-builder-page .tt-table {
+  table-layout: auto;
+}
+
+.timetable-builder-page .tt-edit-table select,
+.timetable-builder-page .tt-edit-table input {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.timetable-builder-page .tt-arrangement-cell {
+  min-width: 120px;
+}
+
+/* Status / empty-state messages should use consistent box sizing. */
+.timetable-builder-page .tt-empty,
+.timetable-builder-page .tt-warning,
+.timetable-builder-page .tt-notice {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .timetable-builder-page .tt-header {
+    align-items: stretch;
+  }
+
+  .timetable-builder-page .tt-header-actions {
+    width: 100%;
+  }
+
+  .timetable-builder-page .tt-builder-config-head {
+    align-items: stretch;
+  }
+
+  .timetable-builder-page .tt-config-grid {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .timetable-builder-page .tt-header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .timetable-builder-page .tt-save-state {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .timetable-builder-page .tt-print,
+  .timetable-builder-page .tt-pdf-button,
+  .timetable-builder-page .tt-clear-all-button,
+  .timetable-builder-page .tt-generate-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .timetable-builder-page .tt-fixed-rule {
+    align-items: flex-start;
+  }
+
+  .timetable-builder-page .tt-fixed-rule span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 }
