@@ -471,9 +471,38 @@ export default function TimetableBuilder({
     // Both entries are being swapped/moved — exclude them from busy checks.
     const exclude = [srcEntry.id, dstEntry?.id].filter(Boolean);
 
+    const srcTeacherId = effectiveTeacherId(srcEntry);
+    const dstTeacherId = dstEntry ? effectiveTeacherId(dstEntry) : "";
+
+    // Do not move a subject into a class/section where it is not mapped.
+    if (!subjectMappings.some(
+      (m) => m.classId === classId && m.subjectId === srcEntry.subjectId &&
+        Number(m.periodsPerWeek) > 0
+    )) {
+      return flash("error", "Cannot move: this subject is not mapped to the destination class.");
+    }
+    if (srcTeacherId && !teacherMappings.some(
+      (m) => m.classId === classId && m.sectionId === sectionId &&
+        m.subjectId === srcEntry.subjectId && m.teacherId === srcTeacherId
+    )) {
+      return flash("error", "Cannot move: this teacher is not mapped to the destination section for this subject.");
+    }
+    if (dstEntry && !subjectMappings.some(
+      (m) => m.classId === src.classId && m.subjectId === dstEntry.subjectId &&
+        Number(m.periodsPerWeek) > 0
+    )) {
+      return flash("error", "Cannot swap: the destination subject is not mapped to the source class.");
+    }
+    if (dstEntry && dstTeacherId && !teacherMappings.some(
+      (m) => m.classId === src.classId && m.sectionId === src.sectionId &&
+        m.subjectId === dstEntry.subjectId && m.teacherId === dstTeacherId
+    )) {
+      return flash("error", "Cannot swap: the destination teacher is not mapped to the source section for this subject.");
+    }
+
     if (
-      srcEntry.teacherId &&
-      teacherIsBusy(srcEntry.teacherId, day, periodId, exclude)
+      srcTeacherId &&
+      teacherIsBusy(srcTeacherId, day, periodId, exclude)
     ) {
       return flash(
         "error",
@@ -481,8 +510,8 @@ export default function TimetableBuilder({
       );
     }
     if (
-      dstEntry?.teacherId &&
-      teacherIsBusy(dstEntry.teacherId, src.day, src.periodId, exclude)
+      dstTeacherId &&
+      teacherIsBusy(dstTeacherId, src.day, src.periodId, exclude)
     ) {
       return flash(
         "error",
@@ -626,8 +655,11 @@ export default function TimetableBuilder({
     const lastPeriodOf = new Map();
 
     const trackEntry = (e) => {
-      if (e.teacherId)
-        busyTeachers.add(`${e.day}::${e.periodId}::${e.teacherId}`);
+      // Substitutions also occupy the slot: generation must not schedule
+      // the substitute teacher elsewhere at the same day/period.
+      const occupiedTeacherId = effectiveTeacherId(e);
+      if (occupiedTeacherId)
+        busyTeachers.add(`${e.day}::${e.periodId}::${occupiedTeacherId}`);
       const sdKey = `${e.classId}::${e.sectionId}::${e.subjectId}::${e.day}`;
       subjectDayCounts.set(sdKey, (subjectDayCounts.get(sdKey) || 0) + 1);
       const lastKey = `${e.classId}::${e.sectionId}::${e.subjectId}`;
@@ -647,12 +679,21 @@ export default function TimetableBuilder({
           e.periodId === rule.periodId
       );
       if (alreadyOccupied) return;
-      const subjectIsMapped = subjectMappings.some(
+      const subjectMapping = subjectMappings.find(
         (m) => m.classId === rule.classId && m.subjectId === rule.subjectId &&
           Number(m.periodsPerWeek) > 0
       );
-      if (!subjectIsMapped || !getSections(classes.find((c) => c.id === rule.classId)).some((s) => s.id === rule.sectionId) ||
+      const ruleClass = classes.find((c) => c.id === rule.classId);
+      if (!subjectMapping || !getSections(ruleClass).some((s) => s.id === rule.sectionId) ||
           !days.includes(rule.day) || !periods.some((p) => p.id === rule.periodId)) return;
+
+      // A fixed rule must not schedule beyond the subject's weekly quota.
+      const subjectPlacedCount = [...base, ...fixedPlacements].filter(
+        (e) => e.classId === rule.classId &&
+          e.sectionId === rule.sectionId &&
+          e.subjectId === rule.subjectId
+      ).length;
+      if (subjectPlacedCount >= Number(subjectMapping.periodsPerWeek)) return;
 
       const teacherIds = [
         ...new Set(

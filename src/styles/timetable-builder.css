@@ -554,3 +554,108 @@
     overflow-wrap: anywhere;
   }
 }
+
+
+/* =========================================================
+   VERIFICATION PATCH — overflow, accessibility and print
+   ========================================================= */
+.timetable-builder-page,
+.timetable-builder-page .tt-panel,
+.timetable-builder-page .tt-class-group,
+.timetable-builder-page .tt-section-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.timetable-builder-page button,
+.timetable-builder-page select,
+.timetable-builder-page input {
+  max-width: 100%;
+}
+
+.timetable-builder-page button:focus-visible,
+.timetable-builder-page select:focus-visible,
+.timetable-builder-page input:focus-visible {
+  outline: 2px solid var(--tt-primary);
+  outline-offset: 2px;
+}
+
+.timetable-builder-page .tt-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.timetable-builder-page .tt-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.timetable-builder-page .tt-edit-table {
+  min-width: 1000px;
+}
+
+.timetable-builder-page .tt-notice,
+.timetable-builder-page .tt-warning,
+.timetable-builder-page .tt-empty,
+.timetable-builder-page .tt-fixed-rule {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .timetable-builder-page .tt-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .timetable-builder-page .tt-header h1 {
+    font-size: 24px;
+  }
+
+  .timetable-builder-page .tt-header-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .timetable-builder-page .tt-tabs button {
+    padding: 9px 10px;
+  }
+
+  .timetable-builder-page .tt-config-grid label {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+}
+
+@media print {
+  .timetable-builder-page {
+    width: 100%;
+    padding: 0;
+  }
+
+  .timetable-builder-page .tt-table-wrap {
+    overflow: visible !important;
+    width: 100%;
+  }
+
+  .timetable-builder-page .tt-table,
+  .timetable-builder-page .tt-edit-table,
+  .timetable-builder-page .tt-arrangement-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed;
+    font-size: 7pt;
+  }
+
+  .timetable-builder-page .tt-table th,
+  .timetable-builder-page .tt-table td {
+    overflow-wrap: anywhere;
+    word-break: normal;
+    padding: 2px;
+  }
+
+  .timetable-builder-page .tt-section-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
