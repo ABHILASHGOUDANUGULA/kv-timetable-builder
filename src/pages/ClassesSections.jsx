@@ -72,7 +72,7 @@ const parseSectionNames = (text) => {
   return { names, duplicates };
 };
 
-function ClassesSections({ project, onSave }) {
+function ClassesSections({ project, onSave, onContinue }) {
   const [classes, setClasses] = useState(() => normalizeClasses(project?.data?.classes));
   const [sectionMode, setSectionMode] = useState("bulk");
   const [bulkSectionNames, setBulkSectionNames] = useState("A, B");
@@ -615,10 +615,32 @@ function ClassesSections({ project, onSave }) {
         </div>
       )}
 
-      <div className="classes-save-note">
-        <span>✓</span> Changes are saved automatically to this project.
+      
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "16px",
+          marginTop: "20px",
+        }}
+      >
+        <div className="classes-save-note">
+          <span>✓</span> Changes are saved automatically to this project.
+        </div>
+
+        <button
+          type="button"
+          className="apply-sections-btn"
+          onClick={() => onContinue?.()}
+          style={{ padding: "12px 22px" }}
+        >
+          Next: Subjects →
+        </button>
       </div>
     </div>
+
   );
 }
 

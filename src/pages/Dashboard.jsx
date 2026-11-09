@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 import {
   CalendarDays,
@@ -132,20 +133,14 @@ function readProjects() {
 
 // ---------------- Component ----------------
 
-export default function Dashboard() {
+export default function Dashboard({ session }) {
   const [projects, setProjects] = useState(readProjects);
+  const [cloudLoaded, setCloudLoaded] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
 
-  const [activePage, setActivePage] = useState(() => {
-    try {
-      const saved = window.localStorage?.getItem(ACTIVE_PAGE_KEY);
-      return typeof saved === "string" && saved ? saved : "Dashboard";
-    } catch {
-      return "Dashboard";
-    }
-  });
+  const [activePage, setActivePage] = useState("Dashboard");
 
   const [notice, setNotice] = useState("");
   const [saveStatus, setSaveStatus] = useState("saved");
@@ -176,19 +171,142 @@ export default function Dashboard() {
 
   // ---------------- Persistence effects ----------------
 
+  // Guest projects stay in this browser. Account projects are stored in Supabase.
   useEffect(() => {
+    if (session?.user?.id) return;
     try {
       if (typeof window === "undefined" || !window.localStorage) return;
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
       setSaveStatus("saved");
     } catch (error) {
-      console.error("Unable to save projects:", error);
+      console.error("Unable to save guest projects:", error);
       setSaveStatus("error");
-      setNotice(
-        "Unable to save. Browser storage may be full. Download a backup now."
-      );
+      setNotice("Unable to save locally. Browser storage may be full. Download a backup.");
     }
-  }, [projects]);
+  }, [projects, session?.user?.id]);
+
+  // Load this account's projects. If the account's cloud table is empty,
+  // transfer this browser's saved projects to the account as a first-time migration.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAccountProjects() {
+      const userId = session?.user?.id;
+      if (!userId) {
+        setCloudLoaded(true);
+        setSaveStatus("saved");
+        return;
+      }
+
+      setCloudLoaded(false);
+      setSaveStatus("saving");
+      const { data: rows, error } = await supabase
+        .from("timetables")
+        .select("id, user_id, title, timetable_data, created_at, updated_at")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false });
+
+      if (cancelled) return;
+      if (error) {
+        console.error("Unable to load cloud projects:", error.message);
+        setSaveStatus("error");
+        setNotice(`Could not load cloud projects: ${error.message}`);
+        setCloudLoaded(true);
+        return;
+      }
+
+      let accountRows = rows || [];
+      if (accountRows.length === 0) {
+        const localProjects = readProjects();
+        if (localProjects.length > 0) {
+          const payload = localProjects.map((project) => ({
+            id: project.id,
+            user_id: userId,
+            title: project.schoolName || "Untitled school",
+            timetable_data: project,
+            created_at: project.createdAt,
+            updated_at: project.updatedAt,
+          }));
+          const { data: migratedRows, error: migrationError } = await supabase
+            .from("timetables")
+            .upsert(payload, { onConflict: "id" })
+            .select("id, user_id, title, timetable_data, created_at, updated_at");
+
+          if (cancelled) return;
+          if (migrationError) {
+            console.error("Local project migration failed:", migrationError.message);
+            setNotice(`Cloud migration failed: ${migrationError.message}. Your browser copies remain saved.`);
+            setSaveStatus("error");
+            setCloudLoaded(true);
+            return;
+          }
+          accountRows = migratedRows || payload;
+          setNotice(`Transferred ${localProjects.length} browser project(s) to your account.`);
+        }
+      }
+
+      const cloudProjects = accountRows
+        .map((row) => normalizeProject({
+          ...(row.timetable_data || {}),
+          id: row.id,
+          schoolName: row.timetable_data?.schoolName || row.title,
+          createdAt: row.created_at || row.timetable_data?.createdAt,
+          updatedAt: row.updated_at || row.timetable_data?.updatedAt,
+        }))
+        .filter(Boolean);
+
+      setProjects(cloudProjects);
+      const savedId = window.localStorage?.getItem(SELECTED_PROJECT_KEY);
+      setSelectedProjectId(
+        cloudProjects.some((project) => project.id === savedId)
+          ? savedId
+          : cloudProjects[0]?.id || null
+      );
+      setSaveStatus("saved");
+      setCloudLoaded(true);
+    }
+
+    loadAccountProjects();
+    return () => { cancelled = true; };
+  }, [session?.user?.id]);
+
+  // Debounced upsert of the account's project list. Wait until initial cloud
+  // loading is complete so the initial browser state cannot overwrite cloud data.
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId || !cloudLoaded) return;
+
+    setSaveStatus("saving");
+    const timer = window.setTimeout(async () => {
+      const payload = projects.map((project) => ({
+        id: project.id,
+        user_id: userId,
+        title: project.schoolName || "Untitled school",
+        timetable_data: project,
+        created_at: project.createdAt,
+        updated_at: project.updatedAt || new Date().toISOString(),
+      }));
+
+      if (payload.length === 0) {
+        setSaveStatus("saved");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("timetables")
+        .upsert(payload, { onConflict: "id" });
+
+      if (error) {
+        console.error("Cloud save failed:", error.message);
+        setSaveStatus("error");
+        setNotice(`Cloud save failed: ${error.message}`);
+      } else {
+        setSaveStatus("saved");
+      }
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [projects, session?.user?.id, cloudLoaded]);
 
   useEffect(() => {
     if (selectedProjectId) {
@@ -288,6 +406,20 @@ export default function Dashboard() {
     // harmless — the child unmounts and its pending record flushes; then
     // the filter below drops the project. Subsequent calls find nothing.
     setProjects((previous) => previous.filter((p) => p.id !== project.id));
+
+    if (session?.user?.id) {
+      supabase
+        .from("timetables")
+        .delete()
+        .eq("id", project.id)
+        .eq("user_id", session.user.id)
+        .then(({ error }) => {
+          if (error) {
+            console.error("Cloud project deletion failed:", error.message);
+            setNotice(`Cloud delete failed: ${error.message}`);
+          }
+        });
+    }
 
     if (selectedProjectId === project.id) {
       const remaining = projects.filter((p) => p.id !== project.id);
@@ -616,24 +748,21 @@ export default function Dashboard() {
           <div className="guest-card">
             <div className="guest-heading">
               <Cloud size={17} />
-              <span>Guest Mode</span>
+              <span>{session?.user?.id ? "Cloud Storage" : "Guest Mode"}</span>
             </div>
 
             <p>
-              Your projects are saved in this browser. Download backups
-              regularly.
+              {session?.user?.id
+                ? "Your projects are saved to your Supabase account and can be accessed after signing in."
+                : "Your projects are saved in this browser. Download backups regularly."}
             </p>
 
-            <button
-              onClick={() =>
-                setNotice(
-                  "Account registration will be added in the authentication stage."
-                )
-              }
-            >
-              <LogIn size={15} />
-              Create Account
-            </button>
+            {!session?.user?.id && (
+              <button onClick={() => setNotice("Please use the Sign In / Sign Up page to create an account.")}>
+                <LogIn size={15} />
+                Create Account
+              </button>
+            )}
           </div>
 
           <button
@@ -667,12 +796,12 @@ export default function Dashboard() {
 
           <div className="topbar-right">
             <span className="save-status">
-              {saveStatus === "saved" ? "✓ Saved locally" : "⚠ Save error"}
+              {saveStatus === "saved" ? (session?.user?.id ? "✓ Saved to cloud" : "✓ Saved locally") : saveStatus === "saving" ? "Saving…" : "⚠ Save error"}
             </span>
 
             <span className="guest-badge">
               <span className="status-dot" />
-              Guest Mode
+              {session?.user?.id ? "Account Mode" : "Guest Mode"}
             </span>
 
             <button
@@ -730,11 +859,14 @@ export default function Dashboard() {
         {/* BELL SCHEDULE PAGE */}
         {activePage === "Bell Schedule" &&
           (selectedProject ? (
-            <BellSchedule
-              key={selectedProject.id}
-              project={selectedProject}
-              onSave={updateProjectBellSchedule}
-            />
+            
+<BellSchedule
+  key={selectedProject.id}
+  project={selectedProject}
+  onSave={updateProjectBellSchedule}
+  onContinue={() => setActivePage("Classes & Sections")}
+/>
+
           ) : (
             <div className="content">
               <div className="empty-state">
@@ -756,11 +888,14 @@ export default function Dashboard() {
         {/* CLASSES & SECTIONS PAGE */}
         {activePage === "Classes & Sections" &&
           (selectedProject ? (
-            <ClassesSections
-              key={selectedProject.id}
-              project={selectedProject}
-              onSave={updateProjectClasses}
-            />
+            
+<ClassesSections
+  key={selectedProject.id}
+  project={selectedProject}
+  onSave={updateProjectClasses}
+  onContinue={() => setActivePage("Subjects")}
+/>
+
           ) : (
             <div className="content">
               <div className="empty-state">

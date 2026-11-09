@@ -175,9 +175,14 @@ export default function SchoolSetup({ project, onUpdate, onContinue, onBack }) {
     });
   }, []);
 
-  const handleSave = useCallback(() => {
-    commit({ ...formRef.current, workingDays: [...formRef.current.workingDays] });
-  }, [commit]);
+  
+const handleSave = useCallback(() => {
+  return commit({
+    ...formRef.current,
+    workingDays: [...formRef.current.workingDays],
+  });
+}, [commit]);
+
 
   const handleBack = useCallback(() => {
     if (dirtyRef.current || pendingRef.current) handleSave();

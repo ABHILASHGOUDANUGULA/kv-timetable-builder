@@ -23,13 +23,16 @@ const MAX_PERIOD_DURATION = 180;
 const MAX_BREAK_DURATION = 240;
 const MINUTES_PER_DAY = 24 * 60;
 
+
 const toMinutes = (time) => {
-  if (typeof time !== "string" || !/^([01]\\d|2[0-3]):([0-5]\\d)$/.test(time)) {
+  if (typeof time !== "string" || !/^([01]\d|2[0-3]):([0-5]\d)$/.test(time)) {
     return NaN;
   }
+
   const [hours, minutes] = time.split(":").map(Number);
   return hours * 60 + minutes;
 };
+
 
 const toTime = (minutes) => {
   if (!Number.isFinite(minutes) || minutes < 0 || minutes >= MINUTES_PER_DAY) {
@@ -89,7 +92,7 @@ const readSettings = (project) => {
   };
 };
 
-function BellSchedule({ project, onSave }) {
+function BellSchedule({ project, onSave, onContinue }) {
   const [settings, setSettings] = useState(() => readSettings(project));
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("info");
@@ -731,13 +734,34 @@ function BellSchedule({ project, onSave }) {
               </tbody>
             </table>
           </div>
-          <button
-            type="button"
-            className="bell-secondary-btn bell-no-print"
-            onClick={printBellSchedule}
+          
+          <div
+            className="bell-no-print"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "12px",
+              marginTop: "16px",
+            }}
           >
-            Print Bell Schedule
-          </button>
+            <button
+              type="button"
+              className="bell-secondary-btn"
+              onClick={printBellSchedule}
+            >
+              Print Bell Schedule
+            </button>
+
+            <button
+              type="button"
+              className="bell-generate-btn"
+              onClick={() => onContinue?.()}
+            >
+              Next: Classes & Sections →
+            </button>
+          </div>
+
         </section>
       )}
     </div>

@@ -53,17 +53,113 @@ function buildPrintableHtml({ title, schoolName, academicYear, headers, rows }) 
     .join("");
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
   <style>
-    @page{size:A4 landscape;margin:8mm}*{box-sizing:border-box}
-    body{font-family:Arial,sans-serif;color:#111;margin:0}
-    h2{text-align:center;font-size:16px;margin:0 0 4px}
-    h3{text-align:center;font-size:13px;margin:0 0 10px;font-weight:600}
-    .meta{text-align:center;font-size:10px;margin-bottom:8px}
-    table{width:100%;border-collapse:collapse;table-layout:fixed}
-    th,td{border:1px solid #333;padding:5px 3px;text-align:center;vertical-align:middle;font-size:9px;overflow-wrap:anywhere}
-    th{background:#eef2f7;font-weight:700}
-    td:first-child,th:first-child{width:12%}
-    .break{background:#f1f1f1;font-weight:700}
-    @media print{tr{break-inside:avoid}thead{display:table-header-group}}
+    
+@page {
+  size: A4 landscape;
+  margin: 18mm 12mm 12mm 12mm;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  color: #111;
+  max-width: 273mm;
+  margin: 0 auto;
+}
+
+/* School heading */
+h2 {
+  text-align: center;
+  font-size: 16px;
+  margin: 0 0 5px;
+  padding-top: 3mm;
+  line-height: 1.4;
+}
+
+/* Class and section heading */
+h3 {
+  text-align: center;
+  font-size: 13px;
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+/* Academic year */
+.meta {
+  text-align: center;
+  font-size: 10px;
+  margin-bottom: 12px;
+}
+
+/* Timetable centered on the page */
+table {
+  width: 96%;
+  max-width: 263mm;
+  margin: 8mm auto 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* Table cells */
+th,
+td {
+  border: 1px solid #333;
+  padding: 6px 4px;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+/* Header */
+th {
+  background: #eef2f7;
+  font-weight: 700;
+}
+
+/* Day column */
+td:first-child,
+th:first-child {
+  width: 12%;
+}
+
+/* Break and lunch */
+.break {
+  background: #f1f1f1;
+  font-weight: 700;
+}
+
+/* Print behavior */
+@media print {
+  html,
+  body {
+    margin: 0 auto;
+  }
+
+  table {
+    margin: 8mm auto 0;
+    width: 96%;
+  }
+
+  tr {
+    break-inside: avoid;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+}
+
   </style></head><body>
     <h2>${escapeHtml(schoolName || "School")}</h2>
     <h3>${escapeHtml(title)}</h3>
@@ -1213,6 +1309,7 @@ export default function TimetableBuilder({
                             />
                           )}
                           <select
+                            className="tt-cell-subject"
                             aria-label={`${classItem.name} ${section.name} ${day} ${item.name} subject`}
                             value={entry?.subjectId || ""}
                             onChange={(e) =>
@@ -1253,6 +1350,7 @@ export default function TimetableBuilder({
                               ).options;
                               return opts.length > 1 ? (
                                 <select
+                                  className="tt-cell-teacher"
                                   aria-label="teacher"
                                   value={entry.teacherId || ""}
                                   onChange={(e) =>
