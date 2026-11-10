@@ -83,9 +83,9 @@ function ClassesSections({ project, onSave, onContinue }) {
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState("info");
 
-  const onSaveRef = useRef(onSave);
+    const onSaveRef = useRef(onSave);
   const projectIdRef = useRef(project?.id);
-  const saveTimerRef = useRef(null);
+  const pendingSaveRef = useRef(null);
   const initializedRef = useRef(false);
 
   useEffect(() => {
@@ -104,9 +104,12 @@ function ClassesSections({ project, onSave, onContinue }) {
     initializedRef.current = true;
   }, [project?.id]);
 
-  useEffect(() => {
+    useEffect(() => {
     if (!initializedRef.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (pendingSaveRef.current) {
+      clearTimeout(pendingSaveRef.current.timerId);
+      pendingSaveRef.current = null;
+    }
 
     const projectIdAtSchedule = project?.id;
     const payload = classes.map((item, index) => ({
@@ -118,16 +121,39 @@ function ClassesSections({ project, onSave, onContinue }) {
         name: normalizeSectionName(section.name),
       })),
     }));
+    const saveFn = onSaveRef.current;
 
-    saveTimerRef.current = setTimeout(() => {
+    const timerId = setTimeout(() => {
+      pendingSaveRef.current = null;
       if (projectIdRef.current !== projectIdAtSchedule) return;
-      onSaveRef.current?.(payload);
+      saveFn?.(payload);
     }, 500);
 
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    pendingSaveRef.current = {
+      timerId,
+      payload,
+      saveFn,
+      projectId: projectIdAtSchedule,
     };
+
+    return () => clearTimeout(timerId);
   }, [classes, project?.id]);
+
+  useEffect(() => {
+    return () => {
+      const pending = pendingSaveRef.current;
+      if (!pending) return;
+      clearTimeout(pending.timerId);
+      pendingSaveRef.current = null;
+      if (pending.projectId === projectIdRef.current) {
+        try {
+          pending.saveFn?.(pending.payload);
+        } catch {
+          // Unmount cannot display a useful error.
+        }
+      }
+    };
+  }, []);
 
   const showNotice = (text, type = "info") => {
     setNotice(text);

@@ -275,6 +275,12 @@
   border: 1px solid #fecaca;
 }
 
+.bell-message.info {
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
 /* ---------------- Valid badge ---------------- */
 
 .bell-valid {

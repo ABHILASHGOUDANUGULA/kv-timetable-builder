@@ -34,9 +34,25 @@
 .tt-print:hover, .tt-pdf-button:hover {
   border-color:var(--tt-primary); color:var(--tt-primary); background:var(--tt-primary-soft);
 }
+
 .tt-pdf-button { color:#a12d35; border-color:#f0cfd1; background:#fffafa; white-space:nowrap; }
 .tt-pdf-button:hover { color:#8f2028; border-color:#d98e94; background:#fff1f1; }
 
+.tt-export-buttons { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+
+.tt-excel-button {
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  border:1px solid #c4e3cc; background:#f5fdf7; color:#1f7a3f;
+  border-radius:8px; padding:9px 12px; font-size:12px; font-weight:700;
+  white-space:nowrap; cursor:pointer; transition:.15s ease;
+}
+.tt-excel-button:hover {
+  background:#e9f8ee; border-color:#a3d4b0; color:#15602c;
+}
+.tt-excel-button:focus-visible {
+  outline:2px solid var(--tt-primary);
+  outline-offset:2px;
+}
 /* ---------- Summary cards ---------- */
 .tt-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:0 0 18px; }
 .tt-summary>div { min-width:0; padding:14px 16px; border:1px solid var(--tt-line); border-radius:11px; background:#fff; }
@@ -144,6 +160,21 @@
   display:block; min-height:14px; color:#28724b; font-size:10px; font-weight:650; line-height:1.35;
 }
 .tt-unassigned { color:#c03936; }
+
+.tt-double-badge {
+  display:inline-flex;
+  align-items:center;
+  font-size:9px;
+  font-weight:700;
+  color:#7c2d12;
+  background:#fef3c7;
+  border:1px solid #fcd34d;
+  border-radius:4px;
+  padding:1px 4px;
+  line-height:1.2;
+  white-space:nowrap;
+  letter-spacing:0.2px;
+}
 .tt-clear {
   align-self:flex-start; border:0; padding:2px 0; background:transparent;
   color:#b23a42; font-size:10px; font-weight:650; cursor:pointer;
@@ -404,7 +435,9 @@
   .tt-summary strong { font-size:19px; }
   .tt-section-card { padding:10px; }
   .tt-section-heading { flex-direction:column; }
-  .tt-pdf-button { width:100%; }
+  .tt-export-buttons { flex-direction:column; width:100%; }
+  .tt-pdf-button,
+  .tt-excel-button { width:100%; justify-content:center; }
   .tt-sub-controls { align-items:stretch; }
   .tt-sub-controls>label, .tt-absent-picker { width:100%; min-width:0; }
   .tt-toolbar label { width:100%; }
@@ -586,11 +619,6 @@
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   -webkit-overflow-scrolling: touch;
-}
-
-.timetable-builder-page .tt-table {
-  width: max-content;
-  min-width: 100%;
 }
 
 .timetable-builder-page .tt-edit-table {
@@ -854,4 +882,25 @@
     font-size: 7pt !important;
     padding: 1px !important;
   }
+}
+.tt-parallel-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px; /* Adds space between subject and teacher */
+  line-height: 1.25;
+  width: 100%;
+  margin-bottom: 4px; /* Adds space between stacked subjects */
+}
+
+.tt-parallel-line b {
+  font-size: 10px;
+  color: #1e293b;
+  font-weight: 700;
+}
+
+.tt-parallel-line small {
+  font-size: 9px;
+  color: #4b5563;
+  font-weight: 500;
 }

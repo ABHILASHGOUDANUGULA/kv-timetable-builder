@@ -97,9 +97,8 @@ function BellSchedule({ project, onSave, onContinue }) {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("info");
   const [schedule, setSchedule] = useState(() => readSettings(project).schedule);
-  const onSaveRef = useRef(onSave);
+    const onSaveRef = useRef(onSave);
   const projectIdRef = useRef(project?.id);
-  const saveTimerRef = useRef(null);
   const hasInitializedRef = useRef(false);
 
   useEffect(() => {
@@ -120,41 +119,71 @@ function BellSchedule({ project, onSave, onContinue }) {
   // Debounced save. Saving the schedule together with the configuration keeps the
   // persisted object consistent. The parent onSave callback is expected to merge
   // this object into project.data.bellSchedule.
-  useEffect(() => {
-    if (!hasInitializedRef.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+  const pendingSaveRef = useRef(null);
 
-    const projectIdAtSchedule = project?.id;
-    const payload = {
-      ...settings,
-      periodDuration: Number(settings.periodDuration),
-      periodCount: Number(settings.periodCount),
-      breaks: settings.breaks.map((item) => ({
-        ...item,
-        duration: Number(item.duration),
-      })),
-      schedule,
-    };
+useEffect(() => {
+  if (!hasInitializedRef.current) return;
+  if (pendingSaveRef.current) {
+    clearTimeout(pendingSaveRef.current.timerId);
+    pendingSaveRef.current = null;
+  }
 
-    saveTimerRef.current = setTimeout(() => {
-      // Avoid saving a previous project's form after a project switch.
-      if (projectIdRef.current !== projectIdAtSchedule) return;
-      onSaveRef.current?.(payload);
-    }, 500);
+  const projectIdAtSchedule = project?.id;
+  const payload = {
+    ...settings,
+    periodDuration: Number(settings.periodDuration),
+    periodCount: Number(settings.periodCount),
+    breaks: settings.breaks.map((item) => ({
+      ...item,
+      duration: Number(item.duration),
+    })),
+    schedule,
+  };
+  const saveFn = onSaveRef.current;
 
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [project?.id, settings, schedule]);
+  const timerId = setTimeout(() => {
+    pendingSaveRef.current = null;
+    if (projectIdRef.current !== projectIdAtSchedule) return;
+    saveFn?.(payload);
+  }, 500);
+
+  pendingSaveRef.current = { timerId, payload, saveFn, projectId: projectIdAtSchedule };
+
+  return () => clearTimeout(timerId);
+}, [project?.id, settings, schedule]);
+
+// Flush on unmount.
+useEffect(() => {
+  return () => {
+    const pending = pendingSaveRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timerId);
+    pendingSaveRef.current = null;
+    if (pending.projectId === projectIdRef.current) {
+      try {
+        pending.saveFn?.(pending.payload);
+      } catch {
+        // Unmount cannot display a useful error.
+      }
+    }
+  };
+}, []);
 
   const updateSetting = (field, value) => {
-    setSettings((previous) => ({ ...previous, [field]: value }));
-    setSchedule([]);
+  setSettings((previous) => ({ ...previous, [field]: value }));
+  // Do NOT wipe the generated schedule — instead, mark it stale visually.
+  // The user can regenerate when they're ready, and their last valid schedule
+  // is preserved on disk until they do.
+  if (schedule.length > 0) {
+    setMessage("Settings changed. Regenerate to apply the new timings.");
+    setMessageType("info");
+  } else {
     setMessage("");
     setMessageType("info");
-  };
+  }
+};
 
-  const addBreak = () => {
+    const addBreak = () => {
     setSettings((previous) => {
       const nextNumber = previous.breaks.length + 1;
       return {
@@ -170,28 +199,43 @@ function BellSchedule({ project, onSave, onContinue }) {
         ],
       };
     });
-    setSchedule([]);
-    setMessage("");
+    if (schedule.length > 0) {
+      setMessage("Breaks changed. Regenerate to apply the new timings.");
+      setMessageType("info");
+    } else {
+      setMessage("");
+      setMessageType("info");
+    }
   };
 
-  const updateBreak = (id, field, value) => {
+    const updateBreak = (id, field, value) => {
     setSettings((previous) => ({
       ...previous,
       breaks: previous.breaks.map((item) =>
         item.id === id ? { ...item, [field]: value } : item
       ),
     }));
-    setSchedule([]);
-    setMessage("");
+    if (schedule.length > 0) {
+      setMessage("Breaks changed. Regenerate to apply the new timings.");
+      setMessageType("info");
+    } else {
+      setMessage("");
+      setMessageType("info");
+    }
   };
 
-  const removeBreak = (id) => {
+    const removeBreak = (id) => {
     setSettings((previous) => ({
       ...previous,
       breaks: previous.breaks.filter((item) => item.id !== id),
     }));
-    setSchedule([]);
-    setMessage("");
+    if (schedule.length > 0) {
+      setMessage("Breaks changed. Regenerate to apply the new timings.");
+      setMessageType("info");
+    } else {
+      setMessage("");
+      setMessageType("info");
+    }
   };
 
   const validateAndGenerate = () => {
@@ -211,8 +255,11 @@ function BellSchedule({ project, onSave, onContinue }) {
     const duration = safePositiveInteger(periodDuration);
     const count = safePositiveInteger(periodCount);
 
-    const fail = (text) => {
-      setSchedule([]);
+        const fail = (text) => {
+      // Do NOT clear the previous valid schedule — the user may have clicked
+      // Generate by mistake while editing settings. Preserve their last
+      // working schedule; they can regenerate intentionally after fixing
+      // the error.
       setMessage(text);
       setMessageType("error");
     };
@@ -491,12 +538,30 @@ function BellSchedule({ project, onSave, onContinue }) {
       </html>`);
     printWindow.document.close();
 
-    // Print after the new document is ready.
-    printWindow.onload = () => {
-      printWindow.focus();
-      printWindow.print();
-      printWindow.onafterprint = () => printWindow.close();
+// Give the browser a tick to settle, then print. Using setTimeout is more
+// reliable than onload after document.write.
+setTimeout(() => {
+  try {
+    printWindow.focus();
+
+    // Auto-close the print window once the print dialog is dismissed.
+    // - Chrome: print() blocks until the dialog closes, then afterprint fires.
+    // - Firefox / Safari: print() returns immediately; afterprint still fires.
+    // If the browser blocks window.close() (rare), the tab simply stays open
+    // and the user closes it manually — no regression from before.
+    printWindow.onafterprint = () => {
+      try {
+        printWindow.close();
+      } catch {
+        /* Some browsers disallow programmatic close — harmless. */
+      }
     };
+
+    printWindow.print();
+  } catch (err) {
+    console.error("Print failed:", err);
+  }
+}, 100);
   };
 
   return (

@@ -3,7 +3,9 @@ import {
   AlertTriangle, CheckCircle2, Download, Printer,
   School, Users, UserRound, CalendarRange, ArrowLeftRight,
   Wand2, GripVertical, ListChecks, RotateCcw, Clock, Pin, Trash2,
+  FileSpreadsheet, Undo2, Redo2,
 } from "lucide-react";
+import { solveTimetable } from "../lib/timetableSolver";
 import "../styles/timetable-builder.css";
 
 /* ------------------------------------------------------------------ */
@@ -25,6 +27,81 @@ const escapeHtml = (v) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
   );
 const cellToHtml = (v) => escapeHtml(v).replace(/\n/g, "<br>");
+const safeFilename = (v) =>
+  String(v ?? "")
+    .trim()
+    .replace(/[^\w\-]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "Untitled";
+const saveXlsxBuffer = (buffer, filename) => {
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+const ABSENCE_REASONS = [
+  "Sick Leave", "Casual Leave", "Earned Leave",
+  "Training / Workshop", "Official Duty", "Personal Reason", "Other",
+];
+
+function normalizeSubstitutionRecord(s) {
+  if (!s || typeof s !== "object") return null;
+  const reasonCategory =
+    s.reasonCategory ||
+    (s.reason === "Absent teacher" || !s.reason ? "Other" : s.reason);
+  return {
+    ...s,
+    id: String(s.id || makeId()),
+    date: s.date || "",
+    day: s.day || "",
+    periodId: s.periodId || "",
+    timetableEntryId: s.timetableEntryId || "",
+    classId: s.classId || "",
+    sectionId: s.sectionId || "",
+    subjectId: s.subjectId || "",
+    originalTeacherId: s.originalTeacherId || "",
+    substituteTeacherId: s.substituteTeacherId || "",
+    reasonCategory: ABSENCE_REASONS.includes(reasonCategory) ? reasonCategory : "Other",
+    reasonNote: String(s.reasonNote || ""),
+    verifiedStatus: ["pending", "covered", "not-covered"].includes(s.verifiedStatus)
+      ? s.verifiedStatus : "pending",
+    verifiedAt: s.verifiedAt || null,
+    createdAt: s.createdAt || new Date().toISOString(),
+  };
+}
+
+function normalizeAbsence(a) {
+  if (!a || typeof a !== "object") return null;
+  return {
+    id: String(a.id || makeId()),
+    date: a.date || "",
+    day: a.day || "",
+    teacherId: a.teacherId || "",
+    reasonCategory: ABSENCE_REASONS.includes(a.reasonCategory)
+      ? a.reasonCategory
+      : "Other",
+    reasonNote: String(a.reasonNote || ""),
+    verifiedStatus: ["pending", "covered", "not-covered"].includes(a.verifiedStatus)
+      ? a.verifiedStatus
+      : "pending",
+    verifiedAt: a.verifiedAt || null,
+    createdAt: a.createdAt || new Date().toISOString(),
+  };
+}
+
+function deriveWeekday(dateStr, availableDays) {
+  if (!dateStr) return availableDays[0] || "Monday";
+  const dow = new Date(`${dateStr}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "long",
+  });
+  return availableDays.includes(dow) ? dow : availableDays[0] || "Monday";
+}
 
 function getSchedule(project) {
   return safeArray(project?.data?.bellSchedule?.schedule)
@@ -164,8 +241,63 @@ th:first-child {
     <h2>${escapeHtml(schoolName || "School")}</h2>
     <h3>${escapeHtml(title)}</h3>
     <div class="meta">Academic Year: ${escapeHtml(academicYear || "")}</div>
-    <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>
-    <script>window.onload=()=>window.print()</script>
+        <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>
+    <script>setTimeout(function(){try{window.focus();window.print();}catch(e){}}, 120);</script>
+    </body></html>`;
+}
+
+function buildMultiBlockPrintableHtml({
+  title,
+  schoolName,
+  academicYear,
+  blocks,
+}) {
+  const blocksHtml = blocks
+    .map(
+      (block, idx) => `
+    <div class="block${idx < blocks.length - 1 ? " block-break" : ""}">
+      <h3>${escapeHtml(block.heading)}</h3>
+      <table>
+        <thead><tr>${block.headers
+          .map((h) => `<th>${cellToHtml(h)}</th>`)
+          .join("")}</tr></thead>
+        <tbody>${block.rows
+          .map(
+            (row) =>
+              `<tr>${row.map((c) => `<td>${cellToHtml(c)}</td>`).join("")}</tr>`
+          )
+          .join("")}</tbody>
+      </table>
+    </div>`
+    )
+    .join("");
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(
+    title
+  )}</title>
+  <style>
+    @page { size: A4 landscape; margin: 18mm 12mm 12mm 12mm; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; color: #111; max-width: 273mm; margin: 0 auto; }
+    h2 { text-align: center; font-size: 16px; margin: 0 0 5px; padding-top: 3mm; line-height: 1.4; }
+    h3 { text-align: center; font-size: 13px; margin: 14px 0 6px; font-weight: 600; }
+    .meta { text-align: center; font-size: 10px; margin-bottom: 12px; }
+    table { width: 96%; max-width: 263mm; margin: 4mm auto 8mm; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #333; padding: 6px 4px; text-align: center; vertical-align: middle; font-size: 9px; overflow-wrap: anywhere; }
+    th { background: #eef2f7; font-weight: 700; }
+    td:first-child, th:first-child { width: 15%; }
+    .block-break { break-after: page; page-break-after: always; }
+    @media print {
+      tr { break-inside: avoid; }
+      thead { display: table-header-group; }
+    }
+  </style></head><body>
+    <h2>${escapeHtml(schoolName || "School")}</h2>
+    <h3>${escapeHtml(title)}</h3>
+    <div class="meta">Academic Year: ${escapeHtml(academicYear || "")}</div>
+    ${blocksHtml}
+    <script>setTimeout(function(){try{window.focus();window.print();}catch(e){}}, 120);</script>
   </body></html>`;
 }
 
@@ -181,6 +313,7 @@ export default function TimetableBuilder({
   project,
   onSaveTimetable,
   onSaveSubstitutions,
+  onSaveAbsences,
   onSaveTimetableSettings,
 }) {
   const projectId = project?.id;
@@ -197,9 +330,13 @@ export default function TimetableBuilder({
     () => safeArray(project?.data?.teachers).filter((i) => i.active !== false),
     [project?.data?.teachers]
   );
-  const subjectMappings = useMemo(
+    const subjectMappings = useMemo(
     () => safeArray(project?.data?.mappings),
     [project?.data?.mappings]
+  );
+  const optionSets = useMemo(
+    () => safeArray(project?.data?.optionSets),
+    [project?.data?.optionSets]
   );
   const teacherMappings = useMemo(
     () => safeArray(project?.data?.teacherMappings),
@@ -218,28 +355,53 @@ export default function TimetableBuilder({
     [project?.data?.school?.workingDays]
   );
 
-  const [view, setView] = useState("class");
+    const [view, setView] = useState("class");
   const [timetable, setTimetable] = useState(() =>
     safeArray(project?.data?.timetable)
   );
-  const [substitutions, setSubstitutions] = useState(() =>
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+    const [substitutions, setSubstitutions] = useState(() =>
     safeArray(project?.data?.substitutions)
+      .map(normalizeSubstitutionRecord)
+      .filter(Boolean)
   );
+  const [absences, setAbsences] = useState(() =>
+    safeArray(project?.data?.absences).map(normalizeAbsence).filter(Boolean)
+  );
+  const [substitutionDate, setSubstitutionDate] = useState(
+    () => new Date().toISOString().slice(0, 10)
+  );
+  const [absenceReasons, setAbsenceReasons] = useState({});
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
+  const [historyReasonFilter, setHistoryReasonFilter] = useState("all");
+    const reasonKey = (date, teacherId) => `${date}::${teacherId}`;
   const [notice, setNotice] = useState("");
   const [noticeKind, setNoticeKind] = useState("info");
   const [saveStatus, setSaveStatus] = useState("saved");
-  const [subDay, setSubDay] = useState(days[0] || "Monday");
-  const [selectedDay, setSelectedDay] = useState(days[0] || "Monday");
-  const [absentTeacherIds, setAbsentTeacherIds] = useState([]);
+    const [selectedDay, setSelectedDay] = useState(days[0] || "Monday");
+      const subDay = useMemo(
+    () => deriveWeekday(substitutionDate, days),
+    [substitutionDate, days]
+  );
+  const absentTeacherIds = useMemo(
+    () =>
+      absences
+        .filter((a) => a.date === substitutionDate)
+        .map((a) => a.teacherId),
+    [absences, substitutionDate]
+  );
   const [searchAbsent, setSearchAbsent] = useState("");
   const [showAbsentList, setShowAbsentList] = useState(false);
 
   const savedSettings = safeObject(project?.data?.timetableSettings);
   const [genMode, setGenMode] = useState(() => savedSettings.genMode || "empty");
-  const [genConfig, setGenConfig] = useState(() => ({
+    const [genConfig, setGenConfig] = useState(() => ({
     maxPerDay: savedSettings.genConfig?.maxPerDay ?? 2,
     avoidConsecutive: savedSettings.genConfig?.avoidConsecutive ?? true,
     balanceWorkload: savedSettings.genConfig?.balanceWorkload ?? true,
+    maxTeacherPeriodsPerDay: savedSettings.genConfig?.maxTeacherPeriodsPerDay ?? 6,
   }));
   const [fixedRules, setFixedRules] = useState(() =>
     safeArray(savedSettings.fixedRules)
@@ -255,7 +417,8 @@ export default function TimetableBuilder({
 
   const draggedSlot = useRef(null);
   const saveTimetableRef = useRef(onSaveTimetable);
-  const saveSubstitutionsRef = useRef(onSaveSubstitutions);
+    const saveSubstitutionsRef = useRef(onSaveSubstitutions);
+  const saveAbsencesRef = useRef(onSaveAbsences);
   const saveSettingsRef = useRef(onSaveTimetableSettings);
 
   // Always-current value refs (used by the unmount flush).
@@ -263,35 +426,73 @@ export default function TimetableBuilder({
   timetableRef.current = timetable;
   const substitutionsRef = useRef(substitutions);
   substitutionsRef.current = substitutions;
+    const absencesRef = useRef(absences);
+  absencesRef.current = absences;
   const settingsRef = useRef({ genMode, genConfig, fixedRules });
   settingsRef.current = { genMode, genConfig, fixedRules };
 
   useEffect(() => { saveTimetableRef.current = onSaveTimetable; }, [onSaveTimetable]);
   useEffect(() => { saveSubstitutionsRef.current = onSaveSubstitutions; }, [onSaveSubstitutions]);
+    useEffect(() => { saveAbsencesRef.current = onSaveAbsences; }, [onSaveAbsences]);
   useEffect(() => { saveSettingsRef.current = onSaveTimetableSettings; }, [onSaveTimetableSettings]);
 
   /* Reload project data on project switch. Skip on the initial mount since
      useState already used the same data. */
   const isFirstMount = useRef(true);
+    // Save the current timetable to the undo stack before a change
+  const saveHistory = () => {
+    setUndoStack((prev) => {
+      const next = [...prev, timetable];
+      if (next.length > 50) return next.slice(1); // Max 50 steps
+      return next;
+    });
+    setRedoStack([]); // Clear redo on new action
+  };
+
+  const handleUndo = () => {
+    if (undoStack.length === 0) return;
+    const previous = undoStack[undoStack.length - 1];
+    setRedoStack((prev) => [timetable, ...prev]);
+    setTimetable(previous);
+    setUndoStack((prev) => prev.slice(0, -1));
+    setNotice("Undo successful.");
+    setNoticeKind("info");
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0) return;
+    const next = redoStack[0];
+    setUndoStack((prev) => [...prev, timetable]);
+    setTimetable(next);
+    setRedoStack((prev) => prev.slice(1));
+    setNotice("Redo successful.");
+    setNoticeKind("info");
+  };
   useEffect(() => {
     if (isFirstMount.current) {
       isFirstMount.current = false;
       return;
     }
-    setTimetable(safeArray(project?.data?.timetable));
+            setTimetable(safeArray(project?.data?.timetable));
     setSubstitutions(safeArray(project?.data?.substitutions));
-    setAbsentTeacherIds([]);
+    setAbsences(
+      safeArray(project?.data?.absences).map(normalizeAbsence).filter(Boolean)
+    );
+    setSubstitutionDate(new Date().toISOString().slice(0, 10));
+    setHistorySearch("");
+    setHistoryStatusFilter("all");
+    setHistoryReasonFilter("all");
     setShowAbsentList(false);
     setSearchAbsent("");
     const d = getDays(project);
-    setSubDay(d[0] || "Monday");
     setSelectedDay(d[0] || "Monday");
     const s = safeObject(project?.data?.timetableSettings);
     setGenMode(s.genMode || "empty");
-    setGenConfig({
+        setGenConfig({
       maxPerDay: s.genConfig?.maxPerDay ?? 2,
       avoidConsecutive: s.genConfig?.avoidConsecutive ?? true,
       balanceWorkload: s.genConfig?.balanceWorkload ?? true,
+      maxTeacherPeriodsPerDay: s.genConfig?.maxTeacherPeriodsPerDay ?? 6,
     });
     setFixedRules(safeArray(s.fixedRules));
     setFixDraft({
@@ -301,15 +502,44 @@ export default function TimetableBuilder({
       day: d[0] || "Monday",
       periodId: "",
     });
-    setNotice("");
+        setNotice("");
     setSaveStatus("saved");
+    setUndoStack([]);
+    setRedoStack([]);
   }, [projectId]);
 
+    /* Global keyboard shortcuts for undo/redo */
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't trigger if user is typing in an input/select
+      const tag = e.target.tagName.toLowerCase();
+      if (tag === "input" || tag === "select" || tag === "textarea") return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undoStack, redoStack, timetable]); // dependencies ensure the closures have latest state
+
   /* Unmount flush — guarantees that quick navigation never loses work. */
+  
   useEffect(() => {
     return () => {
-      saveTimetableRef.current?.(timetableRef.current);
+            saveTimetableRef.current?.(timetableRef.current);
       saveSubstitutionsRef.current?.(substitutionsRef.current);
+      saveAbsencesRef.current?.(absencesRef.current);
       saveSettingsRef.current?.(settingsRef.current);
     };
   }, []);
@@ -350,6 +580,19 @@ export default function TimetableBuilder({
     );
     return () => clearTimeout(t);
   }, [substitutions]);
+    /* Auto-save absences (skip first render). */
+  const skipNextAbsenceSave = useRef(true);
+  useEffect(() => {
+    if (skipNextAbsenceSave.current) {
+      skipNextAbsenceSave.current = false;
+      return;
+    }
+    const t = setTimeout(
+      () => saveAbsencesRef.current?.(absences),
+      450
+    );
+    return () => clearTimeout(t);
+  }, [absences]);
 
   /* Auto-save generator settings (skip first render). */
   const skipNextSettingsSave = useRef(true);
@@ -376,14 +619,25 @@ export default function TimetableBuilder({
     return m;
   }, [timetable]);
 
-  const substitutionMap = useMemo(() => {
+    const substitutionMap = useMemo(() => {
     const m = new Map();
-    substitutions.forEach((s) => m.set(s.timetableEntryId, s));
+    substitutions
+      .filter((s) => s.date === substitutionDate)
+      .forEach((s) => m.set(s.timetableEntryId, s));
     return m;
-  }, [substitutions]);
+  }, [substitutions, substitutionDate]);
 
-  const getEntry = (day, classId, sectionId, periodId) =>
+    const getEntry = (day, classId, sectionId, periodId) =>
     entryMap.get(slotKey(day, classId, sectionId, periodId));
+
+  const getAllEntriesAt = (day, classId, sectionId, periodId) =>
+    timetable.filter(
+      (e) =>
+        e.day === day &&
+        e.classId === classId &&
+        e.sectionId === sectionId &&
+        e.periodId === periodId
+    );
 
   const getSubstitution = (entry) => substitutionMap.get(entry.id);
   const effectiveTeacherId = (entry) =>
@@ -396,7 +650,67 @@ export default function TimetableBuilder({
         subjects.some((s) => s.id === m.subjectId) &&
         Number(m.periodsPerWeek) > 0
     );
+  /* ------------------------------------------------------------------ */
+  /* day-wise absence helpers                                           */
+  /* ------------------------------------------------------------------ */
+  function findAbsence(date, teacherId) {
+    return absences.find(
+      (a) => a.date === date && a.teacherId === teacherId
+    );
+  }
 
+  function upsertAbsence(patch) {
+    setAbsences((prev) => {
+      const idx = prev.findIndex(
+        (a) => a.date === patch.date && a.teacherId === patch.teacherId
+      );
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], ...patch };
+        return next;
+      }
+      return [
+        ...prev,
+        {
+          id: makeId(),
+          verifiedStatus: "pending",
+          verifiedAt: null,
+          createdAt: new Date().toISOString(),
+          ...patch,
+        },
+      ];
+    });
+  }
+
+  function removeAbsenceIfSafe(date, teacherId) {
+    const a = findAbsence(date, teacherId);
+    if (!a) return;
+    // Only drop the record if the user hasn't touched it and no periods
+    // were assigned a substitute — otherwise it's an audit entry.
+    if (a.verifiedStatus !== "pending") return;
+    if (String(a.reasonNote || "").trim()) return;
+    const hasSubs = substitutions.some(
+      (s) => s.originalTeacherId === teacherId && s.day === subDay
+    );
+    if (hasSubs) return;
+    setAbsences((prev) => prev.filter((x) => x.id !== a.id));
+  }
+
+  function toggleAbsentTeacher(teacherId, checked) {
+    if (checked) {
+      if (!findAbsence(substitutionDate, teacherId)) {
+        upsertAbsence({
+          date: substitutionDate,
+          day: subDay,
+          teacherId,
+          reasonCategory: "Sick Leave",
+          reasonNote: "",
+        });
+      }
+    } else {
+      removeAbsenceIfSafe(substitutionDate, teacherId);
+    }
+  }
   function getMappedTeacher(classId, sectionId, subjectId) {
     const matches = teacherMappings.filter(
       (m) =>
@@ -448,7 +762,7 @@ export default function TimetableBuilder({
   /* ------------------------------------------------------------------ */
   /* manual editing                                                     */
   /* ------------------------------------------------------------------ */
-  function saveSlot(
+    function saveSlot(
     day,
     classId,
     sectionId,
@@ -456,6 +770,14 @@ export default function TimetableBuilder({
     subjectId,
     selectedTeacherId = ""
   ) {
+    const all = getAllEntriesAt(day, classId, sectionId, periodId);
+    if (all.length > 1) {
+      flash(
+        "warn",
+        "This slot holds a parallel group. Clear it first to reassign."
+      );
+      return;
+    }
     const mapped = getMappedTeacher(classId, sectionId, subjectId);
     const existing = getEntry(day, classId, sectionId, periodId);
 
@@ -470,8 +792,9 @@ export default function TimetableBuilder({
       return;
     }
 
-    let teacherId = selectedTeacherId || mapped.teacher?.id || "";
+        let teacherId = selectedTeacherId || mapped.teacher?.id || "";
     const exclude = existing ? [existing.id] : [];
+    saveHistory(); // <--- ADD HERE
 
     if (teacherId && teacherIsBusy(teacherId, day, periodId, exclude)) {
       const t = teachers.find((x) => x.id === teacherId);
@@ -489,16 +812,19 @@ export default function TimetableBuilder({
       setNotice("");
     }
 
-    const record = {
-      id: existing?.id || makeId(),
-      day,
-      classId,
-      sectionId,
-      periodId,
-      subjectId,
-      teacherId,
-      updatedAt: new Date().toISOString(),
-    };
+    // Mark manually-entered or edited periods as locked so the generator
+// preserves them during regeneration. Clearing the cell removes the lock.
+const record = {
+  id: existing?.id || makeId(),
+  day,
+  classId,
+  sectionId,
+  periodId,
+  subjectId,
+  teacherId,
+  fixed: true,
+  updatedAt: new Date().toISOString(),
+};
 
     setTimetable((p) =>
       existing
@@ -512,10 +838,23 @@ export default function TimetableBuilder({
     }
   }
 
-  function clearSlot(entry) {
+      function clearSlot(entry) {
+    saveHistory(); // <--- ADD HERE
     setTimetable((p) => p.filter((e) => e.id !== entry.id));
     setSubstitutions((p) =>
       p.filter((s) => s.timetableEntryId !== entry.id)
+    );
+    flash("info", "Period cleared.");
+  }
+
+    function clearCellAt(day, classId, sectionId, periodId) {
+    const toRemove = getAllEntriesAt(day, classId, sectionId, periodId);
+    if (!toRemove.length) return;
+    saveHistory(); // <--- ADD HERE
+    const ids = new Set(toRemove.map((e) => e.id));
+    setTimetable((prev) => prev.filter((e) => !ids.has(e.id)));
+    setSubstitutions((prev) =>
+      prev.filter((s) => !ids.has(s.timetableEntryId))
     );
     flash("info", "Period cleared.");
   }
@@ -615,28 +954,31 @@ export default function TimetableBuilder({
       );
     }
 
+        saveHistory(); // <--- ADD HERE
     setTimetable((prev) => {
       const next = prev.filter(
         (e) => e.id !== srcEntry.id && e.id !== dstEntry?.id
       );
       next.push({
-        ...srcEntry,
-        day,
-        classId,
-        sectionId,
-        periodId,
-        updatedAt: new Date().toISOString(),
-      });
-      if (dstEntry) {
-        next.push({
-          ...dstEntry,
-          day: src.day,
-          classId: src.classId,
-          sectionId: src.sectionId,
-          periodId: src.periodId,
-          updatedAt: new Date().toISOString(),
-        });
-      }
+  ...srcEntry,
+  day,
+  classId,
+  sectionId,
+  periodId,
+  fixed: true,
+  updatedAt: new Date().toISOString(),
+});
+if (dstEntry) {
+  next.push({
+    ...dstEntry,
+    day: src.day,
+    classId: src.classId,
+    sectionId: src.sectionId,
+    periodId: src.periodId,
+    fixed: true,
+    updatedAt: new Date().toISOString(),
+  });
+}
       return next;
     });
     setSubstitutions((prev) =>
@@ -713,296 +1055,78 @@ export default function TimetableBuilder({
   /* AUTO GENERATION                                                    */
   /* ------------------------------------------------------------------ */
   function autoGenerate() {
-    if (
-      !periods.length ||
-      !classes.length ||
-      !subjects.length ||
-      !teachers.length
-    ) {
-      return flash(
-        "error",
-        "Complete Bell Schedule, Classes, Subjects and Teachers first."
-      );
-    }
-    // Pre-flight validation: report actionable data issues before generation.
-    const activeSectionCount = classes.reduce((sum, c) => sum + getSections(c).length, 0);
-    if (!activeSectionCount) {
-      return flash("error", "No active class sections are available. Add/activate sections first.");
-    }
-    const slotCapacity = activeSectionCount * periods.length * days.length;
-    const weeklyDemand = classes.reduce((sum, c) => {
-      const sectionCount = getSections(c).length;
-      return sum + sectionCount * subjectMappings
-        .filter((m) => m.classId === c.id && subjects.some((s) => s.id === m.subjectId))
-        .reduce((n, m) => n + Math.max(0, Number(m.periodsPerWeek) || 0), 0);
-    }, 0);
-    if (weeklyDemand > slotCapacity && genMode === "full") {
-      return flash("error", `Weekly subject demand (${weeklyDemand}) exceeds available class slots (${slotCapacity}). Reduce periods/week or add periods/days.`);
-    }
-
     setIsGenerating(true);
-
-    // 1. Base = existing timetable (fill mode) or empty (regenerate all).
-    const base = genMode === "empty" ? [...timetable] : [];
-
-    // 2. Trackers.
-    const busyTeachers = new Set();
-    const subjectDayCounts = new Map();
-    const lastPeriodOf = new Map();
-
-    const trackEntry = (e) => {
-      // Substitutions also occupy the slot: generation must not schedule
-      // the substitute teacher elsewhere at the same day/period.
-      const occupiedTeacherId = effectiveTeacherId(e);
-      if (occupiedTeacherId)
-        busyTeachers.add(`${e.day}::${e.periodId}::${occupiedTeacherId}`);
-      const sdKey = `${e.classId}::${e.sectionId}::${e.subjectId}::${e.day}`;
-      subjectDayCounts.set(sdKey, (subjectDayCounts.get(sdKey) || 0) + 1);
-      const lastKey = `${e.classId}::${e.sectionId}::${e.subjectId}`;
-      const pi = periods.findIndex((p) => p.id === e.periodId);
-      lastPeriodOf.set(lastKey, pi);
-    };
-    base.forEach(trackEntry);
-
-    // 3. Fixed rules first — skip if slot occupied by base OR another fixed rule.
-    const fixedPlacements = [];
-    fixedRules.forEach((rule) => {
-      const alreadyOccupied = [...base, ...fixedPlacements].some(
-        (e) =>
-          e.day === rule.day &&
-          e.classId === rule.classId &&
-          e.sectionId === rule.sectionId &&
-          e.periodId === rule.periodId
-      );
-      if (alreadyOccupied) return;
-      const subjectMapping = subjectMappings.find(
-        (m) => m.classId === rule.classId && m.subjectId === rule.subjectId &&
-          Number(m.periodsPerWeek) > 0
-      );
-      const ruleClass = classes.find((c) => c.id === rule.classId);
-      if (!subjectMapping || !getSections(ruleClass).some((s) => s.id === rule.sectionId) ||
-          !days.includes(rule.day) || !periods.some((p) => p.id === rule.periodId)) return;
-
-      // A fixed rule must not schedule beyond the subject's weekly quota.
-      const subjectPlacedCount = [...base, ...fixedPlacements].filter(
-        (e) => e.classId === rule.classId &&
-          e.sectionId === rule.sectionId &&
-          e.subjectId === rule.subjectId
-      ).length;
-      if (subjectPlacedCount >= Number(subjectMapping.periodsPerWeek)) return;
-
-      const teacherIds = [
-        ...new Set(
-          teacherMappings
-            .filter(
-              (m) =>
-                m.classId === rule.classId &&
-                m.sectionId === rule.sectionId &&
-                m.subjectId === rule.subjectId
-            )
-            .map((m) => m.teacherId)
-        ),
-      ].filter((id) => teachers.some((t) => t.id === id));
-      if (!teacherIds.length) return;
-
-      let chosen = "";
-      for (const tid of teacherIds) {
-        if (!busyTeachers.has(`${rule.day}::${rule.periodId}::${tid}`)) {
-          chosen = tid;
-          break;
-        }
-      }
-
-      const entry = {
-        id: makeId(),
-        day: rule.day,
-        classId: rule.classId,
-        sectionId: rule.sectionId,
-        periodId: rule.periodId,
-        subjectId: rule.subjectId,
-        teacherId: chosen,
-        fixed: true,
-        updatedAt: new Date().toISOString(),
-      };
-      fixedPlacements.push(entry);
-      trackEntry(entry);
-    });
-
-    const baseWithFixed = [...base, ...fixedPlacements];
-
-    // 4. Build remaining requirements. Count ALL existing slots for a subject
-    //    (including any without a teacher) so we don't over-schedule.
-    const requirements = [];
-    classes.forEach((c) => {
-      getSections(c).forEach((sec) => {
-        subjectMappings
-          .filter((m) => m.classId === c.id && Number(m.periodsPerWeek) > 0)
-          .forEach((m) => {
-            if (!subjects.some((s) => s.id === m.subjectId)) return;
-
-            const alreadyPlaced = baseWithFixed.filter(
-              (e) =>
-                e.classId === c.id &&
-                e.sectionId === sec.id &&
-                e.subjectId === m.subjectId
-            ).length;
-
-            const remaining = Number(m.periodsPerWeek) - alreadyPlaced;
-            if (remaining <= 0) return;
-
-            const tids = [
-              ...new Set(
-                teacherMappings
-                  .filter(
-                    (tm) =>
-                      tm.classId === c.id &&
-                      tm.sectionId === sec.id &&
-                      tm.subjectId === m.subjectId
-                  )
-                  .map((tm) => tm.teacherId)
-              ),
-            ].filter((id) => teachers.some((t) => t.id === id));
-
-            requirements.push({
-              classId: c.id,
-              sectionId: sec.id,
-              subjectId: m.subjectId,
-              remaining,
-              teachers: tids,
-              cursor: 0,
-              lastIdx: -99,
-            });
-          });
+    try {
+            const result = solveTimetable({
+        classes,
+        subjects,
+        teachers,
+        subjectMappings,
+        teacherMappings,
+        optionSets, // <--- ADD THIS LINE
+        periods,
+        days,
+        existingTimetable: timetable,
+        substitutions,
+        fixedRules,
+        config: genConfig,
+        mode: genMode,
       });
-    });
 
-    // Precomputed workload helper — clear and fast enough for typical schools.
-    const teacherLoad = (tid) => {
-      let n = 0;
-      for (const key of busyTeachers) {
-        if (key.endsWith(`::${tid}`)) n += 1;
+            if (!result.ok) {
+        flash("error", result.message);
+        return;
       }
-      return n;
-    };
 
-    // 5. Fill slots in deterministic order: day → period → class → section.
-    const newEntries = [];
-    for (const day of days) {
-      for (let pi = 0; pi < periods.length; pi++) {
-        const period = periods[pi];
-        for (const c of classes) {
-          for (const sec of getSections(c)) {
-            const occupied = [...baseWithFixed, ...newEntries].some(
-              (e) =>
-                e.day === day &&
-                e.classId === c.id &&
-                e.sectionId === sec.id &&
-                e.periodId === period.id
-            );
-            if (occupied) continue;
+      saveHistory(); // <--- ADD HERE
+      setTimetable(result.timetable);
 
-            const candidates = requirements.filter((r) => {
-              if (r.classId !== c.id || r.sectionId !== sec.id) return false;
-              if (r.remaining <= 0) return false;
-              if (!r.teachers.length) return false;
-              const sdKey = `${c.id}::${sec.id}::${r.subjectId}::${day}`;
-              if (
-                genConfig.maxPerDay > 0 &&
-                (subjectDayCounts.get(sdKey) || 0) >= genConfig.maxPerDay
-              )
-                return false;
-              return true;
-            });
-            if (!candidates.length) continue;
+            // Substitutions are audit records — never deleted on regeneration.
+      // Stale records (timetableEntryId no longer present) are simply
+      // ignored by the date-scoped substitutionMap above.
 
-            candidates.sort((a, b) => {
-              if (genConfig.avoidConsecutive) {
-                const ac = a.lastIdx === pi - 1 ? 1 : 0;
-                const bc = b.lastIdx === pi - 1 ? 1 : 0;
-                if (ac !== bc) return ac - bc;
-              }
-              if (a.remaining !== b.remaining)
-                return b.remaining - a.remaining;
-              if (genConfig.balanceWorkload) {
-                const al = Math.min(...a.teachers.map(teacherLoad));
-                const bl = Math.min(...b.teachers.map(teacherLoad));
-                if (al !== bl) return al - bl;
-              }
-              return 0;
-            });
+            const lockedPreserved =
+  genMode === "full"
+    ? timetable.filter((e) => e.fixed === true).length
+    : 0;
 
-            for (const req of candidates) {
-              let chosen = null;
-              for (let k = 0; k < req.teachers.length; k++) {
-                const idx = (req.cursor + k) % req.teachers.length;
-                const tid = req.teachers[idx];
-                if (!busyTeachers.has(`${day}::${period.id}::${tid}`)) {
-                  chosen = { tid, idx };
-                  break;
-                }
-              }
-              if (!chosen) continue;
+let msg = `Generated ${result.newEntriesCount} new period${
+  result.newEntriesCount === 1 ? "" : "s"
+}${
+  result.fixedCount ? ` (plus ${result.fixedCount} fixed)` : ""
+}${
+  lockedPreserved
+    ? ` — preserved ${lockedPreserved} manually-locked period(s)`
+    : ""
+}.`;
 
-              const entry = {
-                id: makeId(),
-                day,
-                classId: c.id,
-                sectionId: sec.id,
-                periodId: period.id,
-                subjectId: req.subjectId,
-                teacherId: chosen.tid,
-                updatedAt: new Date().toISOString(),
-              };
-              newEntries.push(entry);
-              trackEntry(entry);
-              req.remaining -= 1;
-              req.cursor = (chosen.idx + 1) % req.teachers.length;
-              req.lastIdx = pi;
-              break;
-            }
-          }
-        }
+      if (result.unplacedCount) {
+        // Build a detailed list of exactly what failed
+        const failures = result.unplacedGroups.map((group) => {
+          const className = classes.find((c) => c.id === group.classId)?.name || "Unknown";
+          const sectionName = getSections(classes.find((c) => c.id === group.classId)).find((s) => s.id === group.sectionId)?.name || "Unknown";
+          const subjectName = subjects.find((s) => s.id === group.subjectId)?.name || "Unknown";
+          return `Class ${className}-${sectionName} (${subjectName}: ${group.remaining} left)`;
+        });
+
+        const uniqueFailures = [...new Set(failures)];
+        
+        msg += ` ${result.unplacedCount} subject-section(s) could not be fully placed.`;
+        
+        // Show the detailed failures as a red error banner (so it doesn't disappear too quickly)
+        flash(
+          "error",
+          `Could not place: ${uniqueFailures.join(", ")}. Check teacher mappings or increase available slots.`
+        );
+      } else {
+        flash("success", msg);
       }
+    } catch (err) {
+      console.error("Timetable generation failed:", err);
+      flash("error", "Timetable generation failed. Check the browser console.");
+    } finally {
+      setIsGenerating(false);
     }
-
-    // 6. Apply.
-    const finalTimetable =
-      genMode === "empty"
-        ? [
-            ...timetable.filter(
-              (e) => !fixedPlacements.some((f) => f.id === e.id)
-            ),
-            ...fixedPlacements,
-            ...newEntries,
-          ]
-        : [...fixedPlacements, ...newEntries];
-
-    setTimetable(finalTimetable);
-
-    // Preserve substitutions in "fill empty" mode; only clear for regenerate-all.
-    if (genMode === "full") {
-      setSubstitutions([]);
-    } else {
-      const keptIds = new Set(finalTimetable.map((e) => e.id));
-      setSubstitutions((prev) =>
-        prev.filter((s) => keptIds.has(s.timetableEntryId))
-      );
-    }
-
-    setIsGenerating(false);
-
-    const unplaced = requirements.filter((r) => r.remaining > 0);
-    let msg = `Generated ${newEntries.length} new period${
-      newEntries.length === 1 ? "" : "s"
-    }${
-      fixedPlacements.length
-        ? ` (plus ${fixedPlacements.length} fixed)`
-        : ""
-    }.`;
-    if (unplaced.length) {
-      msg += ` ${unplaced.length} subject-section(s) could not be fully placed (clash or insufficient slots).`;
-    }
-    flash(unplaced.length ? "warn" : "success", msg);
   }
 
   /* ------------------------------------------------------------------ */
@@ -1019,19 +1143,18 @@ export default function TimetableBuilder({
       day,
       ...schedule.map((item) => {
         if (item.type === "break") return item.name;
-        const entry = getEntry(day, classItem.id, section.id, item.id);
-        if (!entry) return "—";
-        const code =
-          getMappedTeacher(classItem.id, section.id, entry.subjectId).options.find(
-            (o) => o.teacher.id === entry.teacherId
-          )?.subjectCode || "";
-        return `${getName(subjects, entry.subjectId)}${
-          code ? ` (${code})` : ""
-        }\n${
-          entry.teacherId
-            ? getName(teachers, entry.teacherId)
-            : "Teacher not assigned"
-        }`;
+                const cellEntries = getAllEntriesAt(day, classItem.id, section.id, item.id);
+        if (!cellEntries.length) return "—";
+        
+        return cellEntries.map((entry) => {
+          const code =
+            getMappedTeacher(classItem.id, section.id, entry.subjectId).options.find(
+              (o) => o.teacher.id === entry.teacherId
+            )?.subjectCode || "";
+          const subject = getName(subjects, entry.subjectId);
+          const teacher = entry.teacherId ? getName(teachers, entry.teacherId) : "Teacher not assigned";
+          return `${subject}${code ? ` (${code})` : ""}\n${teacher}`;
+        }).join("\n---\n");
       }),
     ]);
     openPrintDocument(
@@ -1086,10 +1209,788 @@ export default function TimetableBuilder({
     );
   }
 
+    /* ------------------------------------------------------------------ */
+  /* Excel exports                                                      */
+  /* ------------------------------------------------------------------ */
+  function writeSectionBlock(sheet, startRow, classItem, section) {
+    const schoolName =
+      project?.data?.school?.schoolName || project?.schoolName || "School";
+    const academicYear =
+      project?.data?.school?.academicYear || project?.academicYear || "";
+    const totalCols = schedule.length + 1;
+
+    // Row 1: school name (merged, bold, centred)
+    sheet.mergeCells(startRow, 1, startRow, totalCols);
+    const titleCell = sheet.getCell(startRow, 1);
+    titleCell.value = schoolName;
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
+    sheet.getRow(startRow).height = 28;
+
+    // Row 2: class-section title
+    sheet.mergeCells(startRow + 1, 1, startRow + 1, totalCols);
+    const subCell = sheet.getCell(startRow + 1, 1);
+    subCell.value = `Class ${classItem.name} – Section ${section.name} Timetable`;
+    subCell.font = { bold: true, size: 12 };
+    subCell.alignment = { horizontal: "center", vertical: "middle" };
+    sheet.getRow(startRow + 1).height = 22;
+
+    // Row 3: academic year
+    sheet.mergeCells(startRow + 2, 1, startRow + 2, totalCols);
+    const yearCell = sheet.getCell(startRow + 2, 1);
+    yearCell.value = `Academic Year: ${academicYear}`;
+    yearCell.alignment = { horizontal: "center" };
+    sheet.getRow(startRow + 2).height = 18;
+
+    // Row 4 stays blank as a visual gap.
+
+    // Row 5: header
+    const headerRowNumber = startRow + 4;
+    const headerRow = sheet.getRow(headerRowNumber);
+    headerRow.values = [
+      "Day",
+      ...schedule.map((i) =>
+        timeText(i) ? `${i.name}\n(${timeText(i)})` : i.name
+      ),
+    ];
+    headerRow.font = { bold: true, size: 11 };
+    headerRow.height = 38;
+    headerRow.alignment = {
+      horizontal: "center",
+      vertical: "middle",
+      wrapText: true,
+    };
+    for (let col = 1; col <= totalCols; col += 1) {
+      const cell = sheet.getCell(headerRowNumber, col);
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE5EAF2" },
+      };
+      cell.border = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+    }
+
+    // Rows 6..N: one row per day
+    days.forEach((day, dayIdx) => {
+      const rowNumber = startRow + 5 + dayIdx;
+      const row = sheet.getRow(rowNumber);
+      row.values = [
+        day,
+        ...schedule.map((item) => {
+          if (item.type === "break") return item.name;
+                    const cellEntries = getAllEntriesAt(day, classItem.id, section.id, item.id);
+          if (!cellEntries.length) return "—";
+          
+          return cellEntries.map((entry) => {
+            const code =
+              getMappedTeacher(classItem.id, section.id, entry.subjectId)
+                .options.find((o) => o.teacher.id === entry.teacherId)
+                ?.subjectCode || "";
+            const subject = getName(subjects, entry.subjectId);
+            const teacher = entry.teacherId
+              ? getName(teachers, entry.teacherId)
+              : "Teacher not assigned";
+            return `${subject}${code ? ` (${code})` : ""}\n${teacher}`;
+          }).join("\n---\n");
+        }),
+      ];
+      row.height = 48;
+      row.alignment = {
+        horizontal: "center",
+        vertical: "middle",
+        wrapText: true,
+      };
+      for (let col = 1; col <= totalCols; col += 1) {
+        const cell = sheet.getCell(rowNumber, col);
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+        if (col === 1) {
+          cell.font = { bold: true, size: 11 };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF7F9FC" },
+          };
+        } else {
+          const item = schedule[col - 2];
+          if (item?.type === "break") {
+            cell.font = { bold: true, color: { argb: "FF80520B" } };
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFFFF8E8" },
+            };
+          }
+        }
+      }
+    });
+
+    // Return the first row after this block so the caller can offset the next one.
+    return startRow + 5 + days.length;
+  }
+
+  function writeTeacherBlock(sheet, startRow, teacher) {
+    const schoolName =
+      project?.data?.school?.schoolName || project?.schoolName || "School";
+    const academicYear =
+      project?.data?.school?.academicYear || project?.academicYear || "";
+    const totalCols = schedule.length + 1;
+
+    sheet.mergeCells(startRow, 1, startRow, totalCols);
+    const titleCell = sheet.getCell(startRow, 1);
+    titleCell.value = schoolName;
+    titleCell.font = { bold: true, size: 16 };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
+    sheet.getRow(startRow).height = 28;
+
+    sheet.mergeCells(startRow + 1, 1, startRow + 1, totalCols);
+    const subCell = sheet.getCell(startRow + 1, 1);
+    subCell.value = `Teacher Timetable – ${teacher.name}${
+      teacher.nickname ? ` (${teacher.nickname})` : ""
+    }`;
+    subCell.font = { bold: true, size: 12 };
+    subCell.alignment = { horizontal: "center", vertical: "middle" };
+    sheet.getRow(startRow + 1).height = 22;
+
+    sheet.mergeCells(startRow + 2, 1, startRow + 2, totalCols);
+    sheet.getCell(startRow + 2, 1).value = `Academic Year: ${academicYear}`;
+    sheet.getCell(startRow + 2, 1).alignment = { horizontal: "center" };
+    sheet.getRow(startRow + 2).height = 18;
+
+    const headerRowNumber = startRow + 4;
+    const headerRow = sheet.getRow(headerRowNumber);
+    headerRow.values = [
+      "Day",
+      ...schedule.map((i) =>
+        timeText(i) ? `${i.name}\n(${timeText(i)})` : i.name
+      ),
+    ];
+    headerRow.font = { bold: true, size: 11 };
+    headerRow.height = 38;
+    headerRow.alignment = {
+      horizontal: "center",
+      vertical: "middle",
+      wrapText: true,
+    };
+    for (let col = 1; col <= totalCols; col += 1) {
+      const cell = sheet.getCell(headerRowNumber, col);
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE5EAF2" },
+      };
+      cell.border = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+    }
+
+    const entries = timetable.filter(
+      (e) => effectiveTeacherId(e) === teacher.id
+    );
+
+    days.forEach((day, dayIdx) => {
+      const rowNumber = startRow + 5 + dayIdx;
+      const row = sheet.getRow(rowNumber);
+      row.values = [
+        day,
+        ...schedule.map((item) => {
+          if (item.type === "break") return item.name;
+          const entry = entries.find(
+            (e) => e.day === day && e.periodId === item.id
+          );
+          if (!entry) return "—";
+          const cls = getName(classes, entry.classId);
+          const sec = getName(
+            getSections(classes.find((c) => c.id === entry.classId)),
+            entry.sectionId
+          );
+          return `${getName(subjects, entry.subjectId)}\n${cls} - ${sec}`;
+        }),
+      ];
+      row.height = 44;
+      row.alignment = {
+        horizontal: "center",
+        vertical: "middle",
+        wrapText: true,
+      };
+      for (let col = 1; col <= totalCols; col += 1) {
+        const cell = sheet.getCell(rowNumber, col);
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+        if (col === 1) {
+          cell.font = { bold: true, size: 11 };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF7F9FC" },
+          };
+        } else {
+          const item = schedule[col - 2];
+          if (item?.type === "break") {
+            cell.font = { bold: true, color: { argb: "FF80520B" } };
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFFFF8E8" },
+            };
+          }
+        }
+      }
+    });
+
+    return startRow + 5 + days.length;
+  }
+
+  function applyScheduleColumnWidths(sheet, wideColumnWidth) {
+    sheet.getColumn(1).width = 13;
+    schedule.forEach((item, i) => {
+      sheet.getColumn(i + 2).width =
+        item.type === "break" ? 11 : wideColumnWidth;
+    });
+  }
+
+  async function exportSectionExcel(classItem, section) {
+    if (!schedule.length) {
+      flash("warn", "Bell schedule is empty. Generate the bell schedule first.");
+      return;
+    }
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "KV Timetable Builder";
+      workbook.created = new Date();
+      let baseName = `Class ${classItem.name} ${section.name}`
+        .slice(0, 31)
+        .replace(/[\[\]\*\?\/\\:]/g, "_");
+      if (!baseName) baseName = "Section";
+      const sheet = workbook.addWorksheet(baseName, {
+        pageSetup: {
+          paperSize: 9,
+          orientation: "landscape",
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+        },
+      });
+      writeSectionBlock(sheet, 1, classItem, section);
+      applyScheduleColumnWidths(sheet, 24);
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveXlsxBuffer(
+        buffer,
+        `Class_${safeFilename(classItem.name)}_Section_${safeFilename(
+          section.name
+        )}_Timetable.xlsx`
+      );
+      flash("success", "Excel file downloaded.");
+    } catch (err) {
+      console.error("Excel export failed:", err);
+      flash("error", "Excel export failed. Check the browser console.");
+    }
+  }
+
+  async function exportTeacherExcel(teacher) {
+    if (!schedule.length) {
+      flash("warn", "Bell schedule is empty. Generate the bell schedule first.");
+      return;
+    }
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "KV Timetable Builder";
+      workbook.created = new Date();
+      let baseName = (teacher.name || "Teacher")
+        .slice(0, 31)
+        .replace(/[\[\]\*\?\/\\:]/g, "_");
+      if (!baseName) baseName = "Teacher";
+      const sheet = workbook.addWorksheet(baseName, {
+        pageSetup: {
+          paperSize: 9,
+          orientation: "landscape",
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+        },
+      });
+      writeTeacherBlock(sheet, 1, teacher);
+      applyScheduleColumnWidths(sheet, 22);
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveXlsxBuffer(
+        buffer,
+        `Teacher_${safeFilename(teacher.name)}_Timetable.xlsx`
+      );
+      flash("success", "Excel file downloaded.");
+    } catch (err) {
+      console.error("Excel export failed:", err);
+      flash("error", "Excel export failed. Check the browser console.");
+    }
+  }
+
+  async function exportAllSectionsExcel() {
+    if (!schedule.length) {
+      flash("warn", "Bell schedule is empty. Generate the bell schedule first.");
+      return;
+    }
+    const pairs = [];
+    classes.forEach((c) => {
+      getSections(c).forEach((sec) => {
+        pairs.push({ classItem: c, section: sec });
+      });
+    });
+    if (!pairs.length) {
+      flash("warn", "No class-sections available to export.");
+      return;
+    }
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "KV Timetable Builder";
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet("All Class-Sections", {
+        pageSetup: {
+          paperSize: 9,
+          orientation: "landscape",
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+        },
+      });
+
+      // Stack every section block vertically with two blank rows between them.
+      let currentRow = 1;
+      pairs.forEach(({ classItem, section }, idx) => {
+        currentRow = writeSectionBlock(
+          sheet,
+          currentRow,
+          classItem,
+          section
+        );
+        if (idx < pairs.length - 1) currentRow += 2;
+      });
+      applyScheduleColumnWidths(sheet, 24);
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const stamp = new Date().toISOString().slice(0, 10);
+      const schoolTag = safeFilename(
+        project?.data?.school?.schoolName || project?.schoolName || "School"
+      );
+      saveXlsxBuffer(
+        buffer,
+        `All_Class_Sections_${schoolTag}_${stamp}.xlsx`
+      );
+      flash(
+        "success",
+        `Exported ${pairs.length} class-section(s) in a single sheet.`
+      );
+    } catch (err) {
+      console.error("Excel export failed:", err);
+      flash("error", "Excel export failed. Check the browser console.");
+    }
+  }
+
+  async function exportAllTeachersExcel() {
+    if (!schedule.length) {
+      flash("warn", "Bell schedule is empty. Generate the bell schedule first.");
+      return;
+    }
+    if (!teachers.length) {
+      flash("warn", "No teachers available to export.");
+      return;
+    }
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "KV Timetable Builder";
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet("All Teachers", {
+        pageSetup: {
+          paperSize: 9,
+          orientation: "landscape",
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+        },
+      });
+
+      // Stack every teacher block vertically with two blank rows between them.
+      let currentRow = 1;
+      teachers.forEach((teacher, idx) => {
+        currentRow = writeTeacherBlock(sheet, currentRow, teacher);
+        if (idx < teachers.length - 1) currentRow += 2;
+      });
+      applyScheduleColumnWidths(sheet, 22);
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const stamp = new Date().toISOString().slice(0, 10);
+      const schoolTag = safeFilename(
+        project?.data?.school?.schoolName || project?.schoolName || "School"
+      );
+      saveXlsxBuffer(
+        buffer,
+        `All_Teachers_${schoolTag}_${stamp}.xlsx`
+      );
+      flash(
+        "success",
+        `Exported ${teachers.length} teacher(s) in a single sheet.`
+      );
+    } catch (err) {
+      console.error("Excel export failed:", err);
+      flash("error", "Excel export failed. Check the browser console.");
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Day-wise & substitution exports                                    */
+  /* ------------------------------------------------------------------ */
+  function buildDayBlocksForClasses() {
+    return days.map((day) => ({
+      heading: day,
+      headers: [
+        "Class / Section",
+        ...schedule.map((i) =>
+          timeText(i) ? `${i.name}\n(${timeText(i)})` : i.name
+        ),
+      ],
+      rows: classes.flatMap((c) =>
+        getSections(c).map((sec) => [
+          `${c.name}-${sec.name}`,
+          ...schedule.map((period) => {
+            if (period.type === "break") return period.name;
+                        const cellEntries = timetable.filter(
+              (e) =>
+                e.day === day &&
+                e.classId === c.id &&
+                e.sectionId === sec.id &&
+                e.periodId === period.id
+            );
+            if (!cellEntries.length) return "—";
+            return cellEntries.map(entry => 
+              `${getName(subjects, entry.subjectId)}\n${getName(
+                teachers,
+                effectiveTeacherId(entry)
+              )}`
+            ).join("\n---\n");
+          }),
+        ])
+      ),
+    }));
+  }
+
+  function buildDayBlocksForTeachers() {
+    return days.map((day) => ({
+      heading: day,
+      headers: [
+        "Teacher",
+        ...schedule.map((i) =>
+          timeText(i) ? `${i.name}\n(${timeText(i)})` : i.name
+        ),
+      ],
+      rows: teachers.map((teacher) => [
+        teacher.nickname ? `${teacher.name} (${teacher.nickname})` : teacher.name,
+        ...schedule.map((period) => {
+          if (period.type === "break") return period.name;
+          const entry = timetable.find(
+            (e) =>
+              e.day === day &&
+              effectiveTeacherId(e) === teacher.id &&
+              e.periodId === period.id
+          );
+          if (!entry) return "—";
+          const cls = getName(classes, entry.classId);
+          const sec = getName(
+            getSections(classes.find((c) => c.id === entry.classId)),
+            entry.sectionId
+          );
+          return `${getName(subjects, entry.subjectId)}\n${cls}-${sec}`;
+        }),
+      ]),
+    }));
+  }
+
+  function buildDayBlocksForSubstitution() {
+    // Only the day currently selected in the Substitution view.
+    const day = subDay;
+    if (!day) return [];
+
+    const absentRows = absentTeacherIds
+      .map((id) => ({
+        teacher: teachers.find((t) => t.id === id),
+        entries: timetable.filter((e) => e.day === day && e.teacherId === id),
+      }))
+      .filter((r) => r.teacher);
+
+    if (!absentRows.length) return [];
+
+    return [
+      {
+                heading: `${day} — ${substitutionDate}`,
+        headers: [
+          "Absent teacher",
+          ...schedule.map((i) =>
+            timeText(i) ? `${i.name}\n(${timeText(i)})` : i.name
+          ),
+        ],
+        rows: absentRows.map(({ teacher, entries }) => [
+          teacher.nickname
+            ? `${teacher.name} (${teacher.nickname})`
+            : teacher.name,
+          ...schedule.map((period) => {
+            if (period.type === "break") return period.name;
+            const entry = entries.find((e) => e.periodId === period.id);
+            if (!entry) return "Free / No class";
+                        const currentSub = substitutions.find(
+              (s) =>
+                s.timetableEntryId === entry.id &&
+                s.date === substitutionDate
+            );
+            const classSec = `${getName(
+              classes,
+              entry.classId
+            )}-${getName(
+              getSections(classes.find((c) => c.id === entry.classId)),
+              entry.sectionId
+            )}`;
+            const subject = getName(subjects, entry.subjectId);
+                        const subName = currentSub
+              ? getName(teachers, currentSub.substituteTeacherId)
+              : "Not assigned";
+            const reason = currentSub?.reasonCategory || "";
+            const status = currentSub?.verifiedStatus || "";
+            return `${classSec}\n${subject}\n→ ${subName}` +
+              (reason ? `\n[${reason}]` : "") +
+              (status ? ` · ${status}` : "");
+          }),
+        ]),
+      },
+    ];
+  }
+
+  function writeDayBlock(sheet, startRow, blockData) {
+    const totalCols = schedule.length + 1;
+
+    // Day heading strip (merged)
+    sheet.mergeCells(startRow, 1, startRow, totalCols);
+    const headingCell = sheet.getCell(startRow, 1);
+    headingCell.value = blockData.heading;
+    headingCell.font = { bold: true, size: 14 };
+    headingCell.alignment = { horizontal: "center", vertical: "middle" };
+    headingCell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFDDE7F5" },
+    };
+    headingCell.border = {
+      top: { style: "medium" },
+      left: { style: "medium" },
+      bottom: { style: "medium" },
+      right: { style: "medium" },
+    };
+    sheet.getRow(startRow).height = 26;
+
+    // Column headers
+    const headerRowNumber = startRow + 1;
+    const headerRow = sheet.getRow(headerRowNumber);
+    headerRow.values = blockData.headers;
+    headerRow.font = { bold: true, size: 11 };
+    headerRow.height = 38;
+    headerRow.alignment = {
+      horizontal: "center",
+      vertical: "middle",
+      wrapText: true,
+    };
+    for (let col = 1; col <= totalCols; col += 1) {
+      const cell = sheet.getCell(headerRowNumber, col);
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE5EAF2" },
+      };
+      cell.border = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+    }
+
+    // Data rows
+    blockData.rows.forEach((values, idx) => {
+      const rowNumber = startRow + 2 + idx;
+      const row = sheet.getRow(rowNumber);
+      row.values = values;
+      row.height = 48;
+      row.alignment = {
+        horizontal: "center",
+        vertical: "middle",
+        wrapText: true,
+      };
+      for (let col = 1; col <= totalCols; col += 1) {
+        const cell = sheet.getCell(rowNumber, col);
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+        if (col === 1) {
+          cell.font = { bold: true, size: 11 };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF7F9FC" },
+          };
+        } else {
+          const item = schedule[col - 2];
+          if (item?.type === "break") {
+            cell.font = { bold: true, color: { argb: "FF80520B" } };
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFFFF8E8" },
+            };
+          }
+        }
+      }
+    });
+
+    return startRow + 2 + blockData.rows.length;
+  }
+
+  async function exportDaywiseExcel(blocks, filenamePrefix) {
+    if (!schedule.length) {
+      flash("warn", "Bell schedule is empty. Generate the bell schedule first.");
+      return;
+    }
+    if (!blocks.length) {
+      flash("warn", "Nothing to export.");
+      return;
+    }
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "KV Timetable Builder";
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet(
+        filenamePrefix.replace(/_/g, " ").slice(0, 31),
+        {
+          pageSetup: {
+            paperSize: 9,
+            orientation: "landscape",
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 0,
+          },
+        }
+      );
+
+      let currentRow = 1;
+      blocks.forEach((block, idx) => {
+        currentRow = writeDayBlock(sheet, currentRow, block);
+        if (idx < blocks.length - 1) currentRow += 2;
+      });
+      applyScheduleColumnWidths(sheet, 24);
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const stamp = new Date().toISOString().slice(0, 10);
+      const schoolTag = safeFilename(
+        project?.data?.school?.schoolName || project?.schoolName || "School"
+      );
+      saveXlsxBuffer(buffer, `${filenamePrefix}_${schoolTag}_${stamp}.xlsx`);
+      flash(
+        "success",
+        `Exported ${blocks.length} day(s) in a single sheet.`
+      );
+    } catch (err) {
+      console.error("Excel export failed:", err);
+      flash("error", "Excel export failed. Check the browser console.");
+    }
+  }
+
+  function exportDaywisePdf(blocks, title) {
+    if (!schedule.length) {
+      flash("warn", "Bell schedule is empty. Generate the bell schedule first.");
+      return;
+    }
+    if (!blocks.length) {
+      flash("warn", "Nothing to export.");
+      return;
+    }
+    openPrintDocument(
+      buildMultiBlockPrintableHtml({
+        title,
+        schoolName:
+          project?.data?.school?.schoolName || project?.schoolName,
+        academicYear:
+          project?.data?.school?.academicYear || project?.academicYear,
+        blocks,
+      })
+    );
+  }
+
+  function exportDayClassesExcel() {
+    exportDaywiseExcel(buildDayBlocksForClasses(), "Daywise_All_Classes");
+  }
+
+  function exportDayClassesPdf() {
+    exportDaywisePdf(
+      buildDayBlocksForClasses(),
+      "DAY-WISE ALL CLASSES TIMETABLE"
+    );
+  }
+
+  function exportDayTeachersExcel() {
+    exportDaywiseExcel(buildDayBlocksForTeachers(), "Daywise_All_Teachers");
+  }
+
+  function exportDayTeachersPdf() {
+    exportDaywisePdf(
+      buildDayBlocksForTeachers(),
+      "DAY-WISE ALL TEACHERS TIMETABLE"
+    );
+  }
+
+  function exportSubstitutionExcel() {
+    if (!absentTeacherIds.length) {
+      flash("warn", "Select at least one absent teacher before exporting.");
+      return;
+    }
+    const dayTag = safeFilename(subDay || "Day");
+    exportDaywiseExcel(
+      buildDayBlocksForSubstitution(),
+      `Substitution_${dayTag}`
+    );
+  }
+
+    function exportSubstitutionPdf() {
+    if (!absentTeacherIds.length) {
+      flash("warn", "Select at least one absent teacher before exporting.");
+      return;
+    }
+    exportDaywisePdf(
+      buildDayBlocksForSubstitution(),
+      `SUBSTITUTION ARRANGEMENTS – ${String(subDay || "").toUpperCase()}`
+    );
+  }
+
   /* ------------------------------------------------------------------ */
   /* substitutions                                                      */
   /* ------------------------------------------------------------------ */
-  const getDayEntries = (day) => timetable.filter((e) => e.day === day);
+      const getDayEntries = (day) => timetable.filter((e) => e.day === day);
 
   function teacherFreePeriods(teacherId, day) {
     return periods.filter(
@@ -1103,10 +2004,11 @@ export default function TimetableBuilder({
     ).length;
   }
 
-  function isFreeForSubstitution(teacherId, day, periodId) {
+    function isFreeForSubstitution(teacherId, day, periodId) {
     if (absentTeacherIds.includes(teacherId)) return false;
     const alreadySub = substitutions.some(
       (s) =>
+        s.date === substitutionDate &&
         s.day === day &&
         s.periodId === periodId &&
         s.substituteTeacherId === teacherId
@@ -1122,11 +2024,13 @@ export default function TimetableBuilder({
     );
   }
 
-  function assignSubstitute(absentTeacherId, absentEntry, substituteTeacherId) {
+    function assignSubstitute(absentTeacherId, absentEntry, substituteTeacherId) {
     if (!substituteTeacherId) {
       setSubstitutions((p) =>
         p.filter(
-          (s) => !(s.day === subDay && s.timetableEntryId === absentEntry.id)
+          (s) =>
+            !(s.date === substitutionDate &&
+              s.timetableEntryId === absentEntry.id)
         )
       );
       return;
@@ -1140,21 +2044,29 @@ export default function TimetableBuilder({
     ) {
       return flash("error", "This teacher is not free in the selected period.");
     }
+        const absence = findAbsence(substitutionDate, absentTeacherId);
     const record = {
       id: makeId(),
-      timetableEntryId: absentEntry.id,
+      date: substitutionDate,
       day: subDay,
+      timetableEntryId: absentEntry.id,
       periodId: absentEntry.periodId,
       classId: absentEntry.classId,
       sectionId: absentEntry.sectionId,
       subjectId: absentEntry.subjectId,
       originalTeacherId: absentTeacherId,
       substituteTeacherId,
-      reason: "Absent teacher",
+      reasonCategory: absence?.reasonCategory || "Other",
+      reasonNote: absence?.reasonNote || "",
+      verifiedStatus: "pending",
+      verifiedAt: null,
+      createdAt: new Date().toISOString(),
     };
     setSubstitutions((p) => [
       ...p.filter(
-        (s) => !(s.day === subDay && s.timetableEntryId === absentEntry.id)
+        (s) =>
+          !(s.date === substitutionDate &&
+            s.timetableEntryId === absentEntry.id)
       ),
       record,
     ]);
@@ -1230,13 +2142,22 @@ export default function TimetableBuilder({
               periods assigned
             </span>
           </div>
-          <button
-            type="button"
-            className="tt-pdf-button"
-            onClick={() => downloadSectionPdf(classItem, section)}
-          >
-            <Download size={15} /> Download PDF
-          </button>
+                    <div className="tt-export-buttons">
+            <button
+              type="button"
+              className="tt-pdf-button"
+              onClick={() => downloadSectionPdf(classItem, section)}
+            >
+              <Download size={15} /> PDF
+            </button>
+            <button
+              type="button"
+              className="tt-excel-button"
+              onClick={() => exportSectionExcel(classItem, section)}
+            >
+              <FileSpreadsheet size={15} /> Excel
+            </button>
+          </div>
         </div>
         <div className="tt-table-wrap">
           <table className="tt-table tt-edit-table">
@@ -1265,7 +2186,7 @@ export default function TimetableBuilder({
                           {item.name}
                         </td>
                       );
-                    const entry = getEntry(
+                                        const entry = getEntry(
                       day,
                       classItem.id,
                       section.id,
@@ -1275,6 +2196,41 @@ export default function TimetableBuilder({
                     const staleSubject =
                       entry?.subjectId &&
                       !mapped.some((m) => m.subjectId === entry.subjectId);
+
+                    // Detect a double-period pair: entry + an adjacent
+                    // teaching period with the same subject and teacher in
+                    // this class-section. Uses `periods` (not `schedule`)
+                    // so breaks between the pair don't break detection.
+                    const pIndex = periods.findIndex((p) => p.id === item.id);
+                    const prevPeriod =
+                      pIndex > 0 ? periods[pIndex - 1] : null;
+                    const nextPeriod =
+                      pIndex >= 0 && pIndex < periods.length - 1
+                        ? periods[pIndex + 1]
+                        : null;
+                    const prevEntry = prevPeriod
+                      ? getEntry(day, classItem.id, section.id, prevPeriod.id)
+                      : null;
+                    const nextEntry = nextPeriod
+                      ? getEntry(day, classItem.id, section.id, nextPeriod.id)
+                      : null;
+                                        const isDoublePair =
+                      entry &&
+                      ((prevEntry &&
+                        prevEntry.subjectId === entry.subjectId &&
+                        prevEntry.teacherId === entry.teacherId) ||
+                        (nextEntry &&
+                          nextEntry.subjectId === entry.subjectId &&
+                          nextEntry.teacherId === entry.teacherId));
+
+                    const cellEntries = getAllEntriesAt(
+                      day,
+                      classItem.id,
+                      section.id,
+                      item.id
+                    );
+                    const isParallel = cellEntries.length > 1;
+
                     return (
                       <td
                         key={item.id}
@@ -1290,120 +2246,167 @@ export default function TimetableBuilder({
                         }
                       >
                         <div
-                          className="tt-edit-cell"
-                          draggable={!!entry}
-                          onDragStart={(e) =>
+                          className={`tt-edit-cell${isParallel ? " tt-edit-cell-parallel" : ""}`}
+                          draggable={!!entry && !isParallel}
+                          onDragStart={(e) => {
+                            if (isParallel) return;
                             handleDragStart(
                               e,
                               day,
                               classItem.id,
                               section.id,
                               item.id
-                            )
-                          }
+                            );
+                          }}
                         >
-                          {entry && (
-                            <GripVertical
-                              size={12}
-                              className="tt-drag-handle"
-                            />
+                                                    {isParallel && (
+                            <>
+                              <span className="tt-parallel-label">
+                                {optionSets.find(
+                                  (s) => s.id === cellEntries[0]?.parallelGroup
+                                )?.name || "Option Set"}
+                              </span>
+                              {cellEntries.map((pe) => (
+                                <div className="tt-parallel-line" key={pe.id}>
+                                  <b>{getName(subjects, pe.subjectId)}</b>
+                                  <small>
+                                    {pe.teacherId
+                                      ? getName(teachers, pe.teacherId)
+                                      : "Not assigned"}
+                                  </small>
+                                </div>
+                              ))}
+                              <button
+                                type="button"
+                                className="tt-clear"
+                                onClick={() =>
+                                  clearCellAt(
+                                    day,
+                                    classItem.id,
+                                    section.id,
+                                    item.id
+                                  )
+                                }
+                              >
+                                Clear
+                              </button>
+                            </>
                           )}
-                          <select
-                            className="tt-cell-subject"
-                            aria-label={`${classItem.name} ${section.name} ${day} ${item.name} subject`}
-                            value={entry?.subjectId || ""}
-                            onChange={(e) =>
-                              saveSlot(
-                                day,
-                                classItem.id,
-                                section.id,
-                                item.id,
-                                e.target.value,
-                                ""
-                              )
-                            }
-                          >
-                            <option value="">— Subject —</option>
-                            {staleSubject && (
-                              <option value={entry.subjectId}>
-                                ⚠{" "}
-                                {getName(
-                                  subjects,
-                                  entry.subjectId,
-                                  "Unknown subject"
-                                )}{" "}
-                                (unmapped)
-                              </option>
-                            )}
-                            {mapped.map((m) => (
-                              <option key={m.subjectId} value={m.subjectId}>
-                                {getName(subjects, m.subjectId)}
-                              </option>
-                            ))}
-                          </select>
-                          {entry?.subjectId &&
-                            (() => {
-                              const opts = getMappedTeacher(
-                                classItem.id,
-                                section.id,
-                                entry.subjectId
-                              ).options;
-                              return opts.length > 1 ? (
-                                <select
-                                  className="tt-cell-teacher"
-                                  aria-label="teacher"
-                                  value={entry.teacherId || ""}
-                                  onChange={(e) =>
-                                    saveSlot(
-                                      day,
-                                      classItem.id,
-                                      section.id,
-                                      item.id,
+
+                          {!isParallel && (
+                            <>
+                              {entry && (
+                                <GripVertical
+                                  size={12}
+                                  className="tt-drag-handle"
+                                />
+                              )}
+                              {isDoublePair && (
+                                <span
+                                  className="tt-double-badge"
+                                  title="Consecutive double period"
+                                >
+                                  Double
+                                </span>
+                              )}
+                              <select
+                                className="tt-cell-subject"
+                                aria-label={`${classItem.name} ${section.name} ${day} ${item.name} subject`}
+                                value={entry?.subjectId || ""}
+                                onChange={(e) =>
+                                  saveSlot(
+                                    day,
+                                    classItem.id,
+                                    section.id,
+                                    item.id,
+                                    e.target.value,
+                                    ""
+                                  )
+                                }
+                              >
+                                <option value="">— Subject —</option>
+                                {staleSubject && (
+                                  <option value={entry.subjectId}>
+                                    ⚠{" "}
+                                    {getName(
+                                      subjects,
                                       entry.subjectId,
-                                      e.target.value
-                                    )
-                                  }
-                                >
-                                  <option value="">
-                                    — Select teacher —
+                                      "Unknown subject"
+                                    )}{" "}
+                                    (unmapped)
                                   </option>
-                                  {opts.map((o) => (
-                                    <option
-                                      key={o.teacher.id}
-                                      value={o.teacher.id}
+                                )}
+                                {mapped.map((m) => (
+                                  <option key={m.subjectId} value={m.subjectId}>
+                                    {getName(subjects, m.subjectId)}
+                                  </option>
+                                ))}
+                              </select>
+                              {entry?.subjectId &&
+                                (() => {
+                                  const opts = getMappedTeacher(
+                                    classItem.id,
+                                    section.id,
+                                    entry.subjectId
+                                  ).options;
+                                  return opts.length > 1 ? (
+                                    <select
+                                      className="tt-cell-teacher"
+                                      aria-label="teacher"
+                                      value={entry.teacherId || ""}
+                                      onChange={(e) =>
+                                        saveSlot(
+                                          day,
+                                          classItem.id,
+                                          section.id,
+                                          item.id,
+                                          entry.subjectId,
+                                          e.target.value
+                                        )
+                                      }
                                     >
-                                      {o.teacher.name}
-                                      {o.subjectCode
-                                        ? ` (${o.subjectCode})`
-                                        : ""}
-                                      {o.periodsAllocated
-                                        ? ` · ${o.periodsAllocated}/wk`
-                                        : ""}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <small
-                                  className={
-                                    entry.teacherId
-                                      ? "tt-teacher-name"
-                                      : "tt-unassigned"
-                                  }
+                                      <option value="">
+                                        — Select teacher —
+                                      </option>
+                                      {opts.map((o) => (
+                                        <option
+                                          key={o.teacher.id}
+                                          value={o.teacher.id}
+                                        >
+                                          {o.teacher.name}
+                                          {o.subjectCode
+                                            ? ` (${o.subjectCode})`
+                                            : ""}
+                                          {o.periodsAllocated
+                                            ? ` · ${o.periodsAllocated}/wk`
+                                            : ""}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <small
+                                      className={
+                                        entry.teacherId
+                                          ? "tt-teacher-name"
+                                          : "tt-unassigned"
+                                      }
+                                    >
+                                      {entry.teacherId
+                                        ? getName(teachers, entry.teacherId)
+                                        : "Teacher not assigned / clash"}
+                                    </small>
+                                  );
+                                })()}
+                              {entry && (
+                                <button
+                                  type="button"
+                                  className="tt-clear"
+                                  onClick={() => clearSlot(entry)}
                                 >
-                                  {entry.teacherId
-                                    ? getName(teachers, entry.teacherId)
-                                    : "Teacher not assigned / clash"}
-                                </small>
-                              );
-                            })()}
-                          {entry && (
-                            <button
-                              type="button"
-                              className="tt-clear"
-                              onClick={() => clearSlot(entry)}
-                            >
-                              Clear
-                            </button>
+                                  Clear
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -1444,13 +2447,22 @@ export default function TimetableBuilder({
               </h3>
               <span>{entries.length} assigned periods</span>
             </div>
-            <button
-              type="button"
-              className="tt-pdf-button"
-              onClick={() => downloadTeacherPdf(teacher)}
-            >
-              <Download size={15} /> Download PDF
-            </button>
+                        <div className="tt-export-buttons">
+              <button
+                type="button"
+                className="tt-pdf-button"
+                onClick={() => downloadTeacherPdf(teacher)}
+              >
+                <Download size={15} /> PDF
+              </button>
+              <button
+                type="button"
+                className="tt-excel-button"
+                onClick={() => exportTeacherExcel(teacher)}
+              >
+                <FileSpreadsheet size={15} /> Excel
+              </button>
+            </div>
           </div>
           <div className="tt-table-wrap">
             <table className="tt-table tt-compact">
@@ -1531,6 +2543,25 @@ export default function TimetableBuilder({
               ))}
             </select>
           </label>
+          <div
+            className="tt-export-buttons"
+            style={{ marginLeft: "auto" }}
+          >
+            <button
+              type="button"
+              className="tt-pdf-button"
+              onClick={exportDayClassesPdf}
+            >
+              <Printer size={15} /> PDF (all days)
+            </button>
+            <button
+              type="button"
+              className="tt-excel-button"
+              onClick={exportDayClassesExcel}
+            >
+              <FileSpreadsheet size={15} /> Excel (all days)
+            </button>
+          </div>
         </div>
         <div className="tt-table-wrap">
           <table className="tt-table tt-compact">
@@ -1559,7 +2590,7 @@ export default function TimetableBuilder({
                             {period.name}
                           </td>
                         );
-                      const entry = entries.find(
+                                            const cellEntries = entries.filter(
                         (e) =>
                           e.classId === c.id &&
                           e.sectionId === sec.id &&
@@ -1567,15 +2598,17 @@ export default function TimetableBuilder({
                       );
                       return (
                         <td key={period.id}>
-                          {entry ? (
+                          {cellEntries.length > 0 ? (
                             <div className="tt-read-cell">
-                              <b>{getName(subjects, entry.subjectId)}</b>
-                              <span>
-                                {getName(
-                                  teachers,
-                                  effectiveTeacherId(entry)
-                                )}
-                              </span>
+                              {cellEntries.map((entry) => (
+                                <div key={entry.id} style={{ marginBottom: "4px" }}>
+                                  <b>{getName(subjects, entry.subjectId)}</b>
+                                  <br />
+                                  <span>
+                                    {getName(teachers, effectiveTeacherId(entry))}
+                                  </span>
+                                </div>
+                              ))}
                             </div>
                           ) : (
                             <span className="tt-dash">—</span>
@@ -1595,7 +2628,7 @@ export default function TimetableBuilder({
 
   function renderDayTeachers() {
     const entries = getDayEntries(selectedDay);
-    return (
+        return (
       <>
         <div className="tt-toolbar">
           <label>
@@ -1609,6 +2642,25 @@ export default function TimetableBuilder({
               ))}
             </select>
           </label>
+          <div
+            className="tt-export-buttons"
+            style={{ marginLeft: "auto" }}
+          >
+            <button
+              type="button"
+              className="tt-pdf-button"
+              onClick={exportDayTeachersPdf}
+            >
+              <Printer size={15} /> PDF (all days)
+            </button>
+            <button
+              type="button"
+              className="tt-excel-button"
+              onClick={exportDayTeachersExcel}
+            >
+              <FileSpreadsheet size={15} /> Excel (all days)
+            </button>
+          </div>
         </div>
         <div className="tt-table-wrap">
           <table className="tt-table tt-compact">
@@ -1671,11 +2723,12 @@ export default function TimetableBuilder({
     );
   }
 
-  function renderSubstitutionView() {
+    function renderSubstitutionView() {
     const absentRows = absentTeacherIds
       .map((id) => ({
         teacher: teachers.find((t) => t.id === id),
         entries: getDayEntries(subDay).filter((e) => e.teacherId === id),
+        absence: findAbsence(substitutionDate, id),
       }))
       .filter((r) => r.teacher);
 
@@ -1683,16 +2736,17 @@ export default function TimetableBuilder({
       <div className="tt-substitution-page">
         <div className="tt-sub-controls">
           <label>
-            Day
-            <select
-              value={subDay}
-              onChange={(e) => setSubDay(e.target.value)}
-            >
-              {days.map((d) => (
-                <option key={d}>{d}</option>
-              ))}
-            </select>
+            Date
+            <input
+              type="date"
+              value={substitutionDate}
+              onChange={(e) => setSubstitutionDate(e.target.value)}
+            />
           </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13, color: "#64748b" }}>Day:</span>
+            <strong>{subDay}</strong>
+          </div>
           <div className="tt-absent-picker">
             <label>Absent teachers</label>
             <button
@@ -1724,11 +2778,7 @@ export default function TimetableBuilder({
                         type="checkbox"
                         checked={absentTeacherIds.includes(t.id)}
                         onChange={(e) =>
-                          setAbsentTeacherIds((p) =>
-                            e.target.checked
-                              ? [...p, t.id]
-                              : p.filter((id) => id !== t.id)
-                          )
+                          toggleAbsentTeacher(t.id, e.target.checked)
                         }
                       />
                       {t.name} {t.nickname ? `(${t.nickname})` : ""}
@@ -1738,9 +2788,82 @@ export default function TimetableBuilder({
             )}
           </div>
         </div>
+
+        {absentRows.length > 0 && (
+          <div style={{
+            border: "1px solid #e2e8f0", borderRadius: 10,
+            padding: 12, marginBottom: 14, background: "#f8fafc",
+          }}>
+            <strong style={{ display: "block", marginBottom: 8 }}>
+              Reason for absence — {substitutionDate} ({subDay})
+            </strong>
+            {absentRows.map(({ teacher, absence }) => {
+              if (!absence) return null;
+              return (
+                <div
+                  key={teacher.id}
+                  style={{
+                    display: "flex", gap: 10, alignItems: "center",
+                    marginBottom: 6, flexWrap: "wrap",
+                  }}
+                >
+                  <span style={{ minWidth: 180 }}>
+                    <b>{teacher.name}</b>
+                  </span>
+                  <select
+                    value={absence.reasonCategory}
+                    onChange={(e) =>
+                      upsertAbsence({
+                        date: substitutionDate,
+                        teacherId: teacher.id,
+                        reasonCategory: e.target.value,
+                      })
+                    }
+                  >
+                    {ABSENCE_REASONS.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={absence.reasonNote}
+                    placeholder="Note (optional)"
+                    onChange={(e) =>
+                      upsertAbsence({
+                        date: substitutionDate,
+                        teacherId: teacher.id,
+                        reasonNote: e.target.value,
+                      })
+                    }
+                    style={{ flex: 1, minWidth: 200 }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="tt-export-buttons" style={{ marginBottom: 14 }}>
+          <button
+            type="button"
+            className="tt-pdf-button"
+            onClick={exportSubstitutionPdf}
+            disabled={!absentTeacherIds.length}
+          >
+            <Printer size={15} /> PDF
+          </button>
+          <button
+            type="button"
+            className="tt-excel-button"
+            onClick={exportSubstitutionExcel}
+            disabled={!absentTeacherIds.length}
+          >
+            <FileSpreadsheet size={15} /> Excel
+          </button>
+        </div>
+
         {!absentRows.length ? (
           <div className="tt-empty">
-            Select the day and choose one or more absent teachers.
+            Select the date and choose one or more absent teachers.
           </div>
         ) : (
           <>
@@ -1815,9 +2938,7 @@ export default function TimetableBuilder({
                                 {getName(subjects, entry.subjectId)}
                               </span>
                               <select
-                                value={
-                                  currentSub?.substituteTeacherId || ""
-                                }
+                                value={currentSub?.substituteTeacherId || ""}
                                 onChange={(e) =>
                                   assignSubstitute(
                                     teacher.id,
@@ -1845,31 +2966,268 @@ export default function TimetableBuilder({
                 </tbody>
               </table>
             </div>
-            <div className="tt-sub-summary">
-              <b>Free-period availability for {subDay}</b>
-              <div>
-                {teachers
-                  .filter((t) => !absentTeacherIds.includes(t.id))
-                  .map((t) => (
-                    <span key={t.id}>
-                      {t.name}{" "}
-                      <b>({teacherFreePeriods(t.id, subDay)})</b>
-                    </span>
-                  ))}
-              </div>
-            </div>
           </>
         )}
       </div>
     );
   }
 
-  const tabs = [
+    function renderSubstitutionHistory() {
+    const filtered = absences
+      .filter((a) => {
+        if (historyStatusFilter !== "all" && a.verifiedStatus !== historyStatusFilter)
+          return false;
+        if (historyReasonFilter !== "all" && a.reasonCategory !== historyReasonFilter)
+          return false;
+        if (historySearch) {
+          const q = historySearch.toLowerCase();
+          const haystack = [
+            a.date, a.day, a.reasonNote,
+            getName(teachers, a.teacherId, ""),
+          ].join(" ").toLowerCase();
+          if (!haystack.includes(q)) return false;
+        }
+        return true;
+      })
+      .sort(
+        (a, b) =>
+          (b.date || "").localeCompare(a.date || "") ||
+          getName(teachers, a.teacherId, "").localeCompare(
+            getName(teachers, b.teacherId, "")
+          )
+      );
+
+    const setStatus = (id, status) =>
+      setAbsences((prev) =>
+        prev.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                verifiedStatus: status,
+                verifiedAt: new Date().toISOString(),
+              }
+            : a
+        )
+      );
+
+    const removeRecord = (id) => {
+      if (!window.confirm("Delete this absence record? This cannot be undone.")) return;
+      setAbsences((prev) => prev.filter((a) => a.id !== id));
+    };
+
+    const coverage = (a) => {
+      const total = timetable.filter(
+        (e) => e.day === a.day && e.teacherId === a.teacherId
+      ).length;
+      const covered = substitutions.filter(
+        (s) => s.date === a.date && s.originalTeacherId === a.teacherId
+      ).length;
+      return { total, covered };
+    };
+
+    return (
+      <div>
+        <div className="tt-toolbar" style={{ flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+          <input
+            value={historySearch}
+            onChange={(e) => setHistorySearch(e.target.value)}
+            placeholder="Search teacher / reason / date…"
+            style={{ minWidth: 260 }}
+          />
+          <label>
+            Status
+            <select
+              value={historyStatusFilter}
+              onChange={(e) => setHistoryStatusFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="covered">✓ Covered</option>
+              <option value="not-covered">✗ Not Covered</option>
+            </select>
+          </label>
+          <label>
+            Reason
+            <select
+              value={historyReasonFilter}
+              onChange={(e) => setHistoryReasonFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              {ABSENCE_REASONS.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="tt-excel-button"
+            onClick={exportSubstitutionLogExcel}
+            disabled={!absences.length}
+          >
+            <FileSpreadsheet size={15} /> Audit Log (Excel)
+          </button>
+          <button
+            className="tt-pdf-button"
+            onClick={exportSubstitutionLogPdf}
+            disabled={!absences.length}
+          >
+            <Printer size={15} /> Audit Log (PDF)
+          </button>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="tt-empty">No absence records match the filters.</div>
+        ) : (
+          <div className="tt-table-wrap">
+            <table className="tt-table tt-compact">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Day</th>
+                  <th>Teacher</th>
+                  <th>Reason</th>
+                  <th>Note</th>
+                  <th>Coverage</th>
+                  <th>Status</th>
+                  <th>Verified At</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((a) => {
+                  const c = coverage(a);
+                  return (
+                    <tr key={a.id}>
+                      <td>{a.date || "—"}</td>
+                      <td>{a.day || "—"}</td>
+                      <td>{getName(teachers, a.teacherId)}</td>
+                      <td>{a.reasonCategory}</td>
+                      <td>{a.reasonNote || "—"}</td>
+                      <td>
+                        <b>{c.covered}</b>/{c.total} periods
+                      </td>
+                      <td>
+                        <select
+                          value={a.verifiedStatus}
+                          onChange={(e) => setStatus(a.id, e.target.value)}
+                        >
+                          <option value="pending">⏳ Pending</option>
+                          <option value="covered">✓ Covered</option>
+                          <option value="not-covered">✗ Not Covered</option>
+                        </select>
+                      </td>
+                      <td>
+                        {a.verifiedAt
+                          ? new Date(a.verifiedAt).toLocaleString()
+                          : "—"}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="tt-remove"
+                          onClick={() => removeRecord(a.id)}
+                          title="Delete record"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function buildAbsenceLogHeaders() {
+    return [
+      "Date", "Day", "Teacher", "Reason", "Note",
+      "Periods Covered", "Total Periods", "Status", "Verified At",
+    ];
+  }
+
+  function buildAbsenceLogRow(a) {
+    const total = timetable.filter(
+      (e) => e.day === a.day && e.teacherId === a.teacherId
+    ).length;
+    const covered = substitutions.filter(
+      (s) => s.date === a.date && s.originalTeacherId === a.teacherId
+    ).length;
+    return [
+      a.date || "—",
+      a.day || "—",
+      getName(teachers, a.teacherId),
+      a.reasonCategory || "—",
+      a.reasonNote || "—",
+      String(covered),
+      String(total),
+      a.verifiedStatus || "pending",
+      a.verifiedAt ? new Date(a.verifiedAt).toLocaleString() : "—",
+    ];
+  }
+
+  async function exportSubstitutionLogExcel() {
+    if (!absences.length) return flash("warn", "No records to export.");
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet("Absence Log", {
+        pageSetup: {
+          paperSize: 9, orientation: "landscape",
+          fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+        },
+      });
+      sheet.getRow(1).values = buildAbsenceLogHeaders();
+      sheet.getRow(1).font = { bold: true };
+      sheet.getRow(1).alignment = { horizontal: "center" };
+      absences
+        .slice()
+        .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+        .forEach((a, idx) => {
+          sheet.getRow(idx + 2).values = buildAbsenceLogRow(a);
+        });
+      [12, 10, 22, 20, 26, 14, 12, 14, 20].forEach(
+        (w, i) => (sheet.getColumn(i + 1).width = w)
+      );
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveXlsxBuffer(
+        buffer,
+        `Absence_Audit_Log_${new Date().toISOString().slice(0, 10)}.xlsx`
+      );
+      flash("success", `Exported ${absences.length} record(s).`);
+    } catch (err) {
+      console.error(err);
+      flash("error", "Audit log export failed.");
+    }
+  }
+
+  function exportSubstitutionLogPdf() {
+    if (!absences.length) return flash("warn", "No records to export.");
+    const headers = buildAbsenceLogHeaders();
+    const rows = absences
+      .slice()
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+      .map(buildAbsenceLogRow);
+    openPrintDocument(
+      buildMultiBlockPrintableHtml({
+        title: "ABSENCE & SUBSTITUTION AUDIT LOG",
+        schoolName:
+          project?.data?.school?.schoolName || project?.schoolName,
+        academicYear:
+          project?.data?.school?.academicYear || project?.academicYear,
+        blocks: [{ heading: "All Absences", headers, rows }],
+      })
+    );
+  }
+      const tabs = [
     ["class", "Class-wise Timetable", School],
     ["teacher", "Teacher-wise Timetable", UserRound],
     ["dayClasses", "Day-wise All Classes", CalendarRange],
     ["dayTeachers", "Day-wise All Teachers", Users],
     ["substitution", "Substitution Arrangements", ArrowLeftRight],
+    ["subHistory", "Substitution History", ListChecks],
     ["workload", "Teacher Workload", ListChecks],
   ];
 
@@ -1894,7 +3252,27 @@ export default function TimetableBuilder({
               ""}
           </p>
         </div>
-        <div className="tt-header-actions">
+                <div className="tt-header-actions">
+          <div style={{ display: "flex", gap: "6px", marginRight: "10px" }}>
+            <button
+              type="button"
+              className="tt-print"
+              onClick={handleUndo}
+              disabled={undoStack.length === 0}
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo2 size={16} /> Undo
+            </button>
+            <button
+              type="button"
+              className="tt-print"
+              onClick={handleRedo}
+              disabled={redoStack.length === 0}
+              title="Redo (Ctrl+Y)"
+            >
+              <Redo2 size={16} /> Redo
+            </button>
+          </div>
           <span
             className={`tt-save-state ${
               saveStatus === "saving" ? "tt-saving" : ""
@@ -1963,23 +3341,28 @@ export default function TimetableBuilder({
         </div>
 
         <div className="tt-mode-switch">
-          <button
-            type="button"
-            className={genMode === "empty" ? "active" : ""}
-            onClick={() => setGenMode("empty")}
-          >
-            Fill Empty Slots
-          </button>
-          <button
-            type="button"
-            className={genMode === "full" ? "active" : ""}
-            onClick={() => setGenMode("full")}
-          >
-            Regenerate All
-          </button>
-        </div>
+  <button
+    type="button"
+    className={genMode === "empty" ? "active" : ""}
+    onClick={() => setGenMode("empty")}
+  >
+    Fill Empty Slots
+  </button>
+  <button
+    type="button"
+    className={genMode === "full" ? "active" : ""}
+    onClick={() => setGenMode("full")}
+  >
+    Regenerate Unlocked
+  </button>
+</div>
+<p style={{ fontSize: 12, color: "#64748b", margin: "6px 0 12px" }}>
+  Manually edited, dragged, or teacher-assigned periods are locked 🔒 and
+  preserved in both modes. Only unlocked periods are regenerated. Use
+  "Clear Timetable" to start from scratch.
+</p>
 
-        <div className="tt-config-grid">
+                <div className="tt-config-grid">
           <label>
             Max same subject / day
             <input
@@ -1991,6 +3374,21 @@ export default function TimetableBuilder({
                 setGenConfig({
                   ...genConfig,
                   maxPerDay: Math.max(0, Number(e.target.value) || 0),
+                })
+              }
+            />
+          </label>
+          <label>
+            Max teacher periods / day
+            <input
+              type="number"
+              min="0"
+              max="12"
+              value={genConfig.maxTeacherPeriodsPerDay}
+              onChange={(e) =>
+                setGenConfig({
+                  ...genConfig,
+                  maxTeacherPeriodsPerDay: Math.max(0, Number(e.target.value) || 0),
                 })
               }
             />
@@ -2154,7 +3552,7 @@ export default function TimetableBuilder({
             />
             {isGenerating ? " Generating…" : " Generate Timetable"}
           </button>
-          {timetable.length > 0 && (
+                    {timetable.length > 0 && (
             <button
               type="button"
               className="tt-clear-all-button"
@@ -2172,10 +3570,72 @@ export default function TimetableBuilder({
         </div>
       </section>
 
-      {notice && (
-        <div className={`tt-notice tt-notice-${noticeKind}`} role="status">
-          <AlertTriangle size={16} /> {notice}
-          <button type="button" onClick={() => setNotice("")}>
+            {/* Bulk export — every class-section or every teacher on a single sheet */}
+      <section className="tt-builder-config">
+        <div className="tt-builder-config-head">
+          <div>
+            <h2>
+              <FileSpreadsheet
+                size={16}
+                style={{ verticalAlign: "middle", marginRight: 6 }}
+              />
+              Bulk Excel Export
+            </h2>
+            <p>
+              Download every class-section (or every teacher) as a single
+              sheet — each timetable block is stacked vertically with a blank
+              row between them. Scroll down the sheet to see every section.
+            </p>
+          </div>
+        </div>
+        <div className="tt-export-buttons">
+          <button
+            type="button"
+            className="tt-excel-button"
+            onClick={exportAllSectionsExcel}
+            disabled={!classes.length || !schedule.length}
+          >
+            <FileSpreadsheet size={15} /> All Class-Sections (
+            {classes.reduce((s, c) => s + getSections(c).length, 0)}{" "}
+            sections)
+          </button>
+          <button
+            type="button"
+            className="tt-excel-button"
+            onClick={exportAllTeachersExcel}
+            disabled={!teachers.length || !schedule.length}
+          >
+            <FileSpreadsheet size={15} /> All Teachers ({teachers.length}{" "}
+            teachers)
+          </button>
+        </div>
+      </section>
+
+            {notice && (
+        <div
+          className={`tt-notice tt-notice-${noticeKind}`}
+          role="status"
+          style={{
+            position: "sticky",
+            top: "10px",
+            zIndex: 50,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            alignItems: "flex-start", // Aligns icon to top if text is long
+          }}
+        >
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />
+          <span style={{ flex: 1 }}>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice("")}
+            style={{
+              flexShrink: 0,
+              background: "rgba(0,0,0,0.05)",
+              borderRadius: "4px",
+              padding: "4px 8px",
+              marginLeft: "10px",
+            }}
+          >
             Dismiss
           </button>
         </div>
@@ -2232,9 +3692,10 @@ export default function TimetableBuilder({
             <div className="tt-empty">Add active teachers first.</div>
           ))}
 
-        {view === "dayClasses" && renderDayClasses()}
+                {view === "dayClasses" && renderDayClasses()}
         {view === "dayTeachers" && renderDayTeachers()}
         {view === "substitution" && renderSubstitutionView()}
+        {view === "subHistory" && renderSubstitutionHistory()}
 
         {view === "workload" && (
           <div>

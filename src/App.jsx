@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import { supabase } from "./lib/supabaseClient";
@@ -8,30 +8,57 @@ function App() {
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
+  const prevUserIdRef = useRef(null);
+
+  const clearLocalProjectCache = () => {
+    try {
+      window.localStorage?.removeItem("school_timetable_projects_v1");
+      window.localStorage?.removeItem("school_timetable_selected_project");
+    } catch (err) {
+      console.error("Unable to clear local project cache:", err);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
 
     async function loadSession() {
-      const { data, error } = await supabase.auth.getSession();
+  try {
+    const { data, error } = await supabase.auth.getSession();
 
-      if (!mounted) return;
+    if (!mounted) return;
 
-      if (error) {
-        console.error("Unable to load session:", error.message);
-      }
-
-      setSession(data?.session ?? null);
-      setAuthChecked(true);
+    if (error) {
+      console.error("Unable to load session:", error.message);
     }
+
+    setSession(data?.session ?? null);
+  } catch (err) {
+    console.error("Auth bootstrap failed:", err);
+  } finally {
+    if (mounted) setAuthChecked(true);
+  }
+}
 
     loadSession();
 
-    const {
+        const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      if (mounted) {
-        setSession(newSession);
+      if (!mounted) return;
+
+      const newUserId = newSession?.user?.id ?? null;
+      const wasSignedIn = !!prevUserIdRef.current;
+      prevUserIdRef.current = newUserId;
+
+      setSession(newSession);
+
+      if (newSession) {
+        setGuestMode(false);
+      } else if (wasSignedIn) {
+        // Signed out (explicit or session expiry): clear this user's browser
+        // data before the next user can trigger a migration from it.
+        clearLocalProjectCache();
       }
     });
 
@@ -60,10 +87,16 @@ function App() {
 
             <button
               onClick={async () => {
-                await supabase.auth.signOut();
-                setSession(null);
-                setGuestMode(false);
-              }}
+  try {
+    await supabase.auth.signOut();
+  } catch (err) {
+    console.error("Logout failed:", err);
+  } finally {
+    clearLocalProjectCache();
+    setSession(null);
+    setGuestMode(false);
+  }
+}}
               style={accountButtonStyle}
             >
               Logout
@@ -90,24 +123,24 @@ function App() {
   }
 
   return (
-    <div>
-      <Auth
-        onAuthSuccess={(newSession) => {
-          setSession(newSession);
-          setGuestMode(false);
-        }}
-      />
+  <div style={unauthWrapperStyle}>
+    <Auth
+      onAuthSuccess={(newSession) => {
+        setSession(newSession);
+        setGuestMode(false);
+      }}
+    />
 
-      <div style={guestContainerStyle}>
-        <button
-          onClick={() => setGuestMode(true)}
-          style={guestButtonStyle}
-        >
-          Continue Without Account
-        </button>
-      </div>
+    <div style={guestContainerStyle}>
+      <button
+        onClick={() => setGuestMode(true)}
+        style={guestButtonStyle}
+      >
+        Continue Without Account
+      </button>
     </div>
-  );
+  </div>
+);
 }
 
 const loadingStyle = {
@@ -129,6 +162,12 @@ const accountBarStyle = {
   background: "#eff6ff",
   borderBottom: "1px solid #dbeafe",
   fontSize: "14px",
+};
+const unauthWrapperStyle = {
+  minHeight: "100vh",
+  display: "flex",
+  flexDirection: "column",
+  background: "#f3f6fb",
 };
 
 const accountButtonStyle = {

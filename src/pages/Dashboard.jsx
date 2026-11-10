@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
 import {
@@ -51,12 +51,87 @@ const DEFAULT_DATA = () => ({
   subjects: [],
   teachers: [],
   mappings: [],
+  optionSets: [],
   teacherMappings: [],
   allocations: [],
   timetable: [],
   substitutions: [],
+  absences: [],
   timetableSettings: {},
 });
+
+// Migration: promote legacy parallel-group mappings to option sets.
+//
+// Before option sets existed, subjects that ran in parallel were tagged
+// with a matching `parallelGroup` label on their class-subject mappings.
+// We now promote each such group to an explicit option-set record, which
+// the new solver will use in Phase B. Existing mappings keep their
+// `parallelGroup` field so the legacy solver keeps working until we
+// switch over.
+//
+// Runs idempotently:
+//   - If option sets already exist, this project is migrated — do nothing.
+//   - Otherwise, derive sets from parallelGroup labels (needs ≥2 subjects).
+function migrateToOptionSets(data) {
+  if (!data || typeof data !== "object") return data;
+
+  // Already migrated (or already using the new UI — trust the data).
+  if (Array.isArray(data.optionSets) && data.optionSets.length > 0) {
+    return data;
+  }
+
+  const mappings = Array.isArray(data.mappings) ? data.mappings : [];
+  const byKey = new Map();
+
+  for (const m of mappings) {
+    if (!m || typeof m !== "object") continue;
+    const group = String(m.parallelGroup || "").trim();
+    if (!group) continue;
+    if (!m.classId || !m.subjectId) continue;
+
+    const key = `${m.classId}::${group.toLowerCase()}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        classId: m.classId,
+        group,
+        subjectIds: [],
+        periods: [],
+      });
+    }
+    const bucket = byKey.get(key);
+    if (!bucket.subjectIds.includes(m.subjectId)) {
+      bucket.subjectIds.push(m.subjectId);
+    }
+    const p = Number(m.periodsPerWeek);
+    if (Number.isFinite(p) && p > 0) bucket.periods.push(p);
+  }
+
+  const newSets = [];
+  for (const bucket of byKey.values()) {
+    // A "group" with only one subject isn't a real parallel group —
+    // it would just be a duplicate single-subject mapping.
+    if (bucket.subjectIds.length < 2) continue;
+
+    const periodsPerWeek = bucket.periods.length
+      ? Math.min(...bucket.periods)
+      : 0;
+
+    newSets.push({
+      id: `set:${bucket.classId}:${bucket.group.toLowerCase()}`,
+      classId: bucket.classId,
+      name: bucket.group,
+      subjectIds: bucket.subjectIds,
+      mutuallyExclusiveWith: [],
+      periodsPerWeek,
+      active: true,
+    });
+  }
+
+  return {
+    ...data,
+    optionSets: newSets,
+  };
+}
 
 function normalizeProject(project) {
   if (!project || typeof project !== "object") return null;
@@ -69,7 +144,7 @@ function normalizeProject(project) {
     status: project.status || "Draft",
     updatedAt: project.updatedAt || new Date().toISOString(),
     createdAt: project.createdAt || new Date().toISOString(),
-    data: { ...DEFAULT_DATA(), ...(project.data || {}) },
+        data: migrateToOptionSets({ ...DEFAULT_DATA(), ...(project.data || {}) }),
   };
 }
 
@@ -171,12 +246,16 @@ export default function Dashboard({ session }) {
 
   // ---------------- Persistence effects ----------------
 
-  // Guest projects stay in this browser. Account projects are stored in Supabase.
+    // Guest projects stay in this browser. Account projects are stored in Supabase.
   useEffect(() => {
     if (session?.user?.id) return;
     try {
       if (typeof window === "undefined" || !window.localStorage) return;
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+      if (projects.length === 0) {
+        window.localStorage.removeItem(STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+      }
       setSaveStatus("saved");
     } catch (error) {
       console.error("Unable to save guest projects:", error);
@@ -242,6 +321,11 @@ export default function Dashboard({ session }) {
           }
           accountRows = migratedRows || payload;
           setNotice(`Transferred ${localProjects.length} browser project(s) to your account.`);
+          try {
+  window.localStorage?.removeItem(STORAGE_KEY);
+} catch (error) {
+  console.error("Unable to clear migrated guest projects:", error);
+}
         }
       }
 
@@ -335,6 +419,7 @@ export default function Dashboard({ session }) {
       setSelectedProjectId(projects.length ? projects[0].id : null);
     }
   }, [projects, selectedProjectId]);
+
 
   // Reset to Dashboard if the active page needs a project but none is selected.
   useEffect(() => {
@@ -483,8 +568,11 @@ export default function Dashboard({ session }) {
   function updateProjectSubjects(data) {
     updateProjectData("subjects", data);
   }
-  function updateProjectMappings(data) {
+    function updateProjectMappings(data) {
     updateProjectData("mappings", data);
+  }
+  function updateProjectOptionSets(data) {
+    updateProjectData("optionSets", data);
   }
   function updateProjectTeacherMappings(data) {
     updateProjectData("teacherMappings", data);
@@ -497,6 +585,9 @@ export default function Dashboard({ session }) {
   }
   function updateProjectSubstitutions(data) {
     updateProjectData("substitutions", data);
+  }
+    function updateProjectAbsences(data) {
+    updateProjectData("absences", data);
   }
   function updateProjectTimetableSettings(data) {
     updateProjectData("timetableSettings", data);
@@ -779,7 +870,7 @@ export default function Dashboard({ session }) {
 
       {/* MAIN */}
       <main className="main-area">
-        <header className="topbar">
+                <header className="topbar">
           <button
             className="mobile-menu-button"
             onClick={() => setMobileMenu(true)}
@@ -812,7 +903,19 @@ export default function Dashboard({ session }) {
               <Bell size={19} />
             </button>
           </div>
-        </header>
+                </header>
+
+        {notice && isBuilderPage && (
+          <div className="notice" style={{ margin: "16px 24px 0" }}>
+            <span>{notice}</span>
+            <button
+              onClick={() => setNotice("")}
+              aria-label="Dismiss notification"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
 
         {/* SCHOOL SETUP PAGE */}
         {activePage === "School Setup" &&
@@ -917,11 +1020,12 @@ export default function Dashboard({ session }) {
         {/* SUBJECTS PAGE */}
         {activePage === "Subjects" &&
           (selectedProject ? (
-            <SubjectLibrary
+                        <SubjectLibrary
               key={selectedProject.id}
               project={selectedProject}
               onSave={updateProjectSubjects}
               onSaveMappings={updateProjectMappings}
+              onSaveOptionSets={updateProjectOptionSets}
             />
           ) : (
             <div className="content">
@@ -993,11 +1097,12 @@ export default function Dashboard({ session }) {
         {/* TIMETABLE BUILDER PAGE */}
         {activePage === "Timetable Builder" &&
           (selectedProject ? (
-            <TimetableBuilder
+                        <TimetableBuilder
               key={selectedProject.id}
               project={selectedProject}
               onSaveTimetable={updateProjectTimetable}
               onSaveSubstitutions={updateProjectSubstitutions}
+              onSaveAbsences={updateProjectAbsences}
               onSaveTimetableSettings={updateProjectTimetableSettings}
             />
           ) : (

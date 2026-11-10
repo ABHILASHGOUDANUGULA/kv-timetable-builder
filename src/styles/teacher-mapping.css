@@ -1513,17 +1513,11 @@
    ===================================================== */
 
 @media (prefers-reduced-motion: reduce) {
-
-  .teacher-mapping-page \*,
-
-  .teacher-mapping-page \*::before,
-
-  .teacher-mapping-page \*::after {
-
+  .teacher-mapping-page *,
+  .teacher-mapping-page *::before,
+  .teacher-mapping-page *::after {
     transition: none !important;
-
   }
-
 }
 
 /* =====================================================

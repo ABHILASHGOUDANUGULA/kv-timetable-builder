@@ -39,27 +39,44 @@ function normalizeSubject(subject) {
 
 function normalizeMapping(mapping) {
   const periods = Number(mapping.periodsPerWeek);
+  const doubles = Number(mapping.doublePeriods);
+  const normalizedPeriods =
+    Number.isFinite(periods) && periods >= 0 ? Math.floor(periods) : 0;
+  const normalizedDoubles =
+    Number.isFinite(doubles) && doubles >= 0 ? Math.floor(doubles) : 0;
   return {
     ...mapping,
     id: String(mapping.id || createId()),
     classId: String(mapping.classId || ""),
     subjectId: String(mapping.subjectId || ""),
-    periodsPerWeek: Number.isFinite(periods) && periods >= 0 ? Math.floor(periods) : 0,
+    periodsPerWeek: normalizedPeriods,
+    doublePeriods: Math.min(
+      normalizedDoubles,
+      Math.floor(normalizedPeriods / 2)
+    ),
   };
 }
 
-function SubjectLibrary({ project, onSave, onSaveMappings }) {
+function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets }) {
   // -------------------- State --------------------
   const [subjects, setSubjects] = useState(() =>
     safeArray(project?.data?.subjects).map(normalizeSubject)
   );
-  const [mappings, setMappings] = useState(() =>
+    const [mappings, setMappings] = useState(() =>
     safeArray(project?.data?.mappings).map(normalizeMapping)
   );
+  const [optionSets, setOptionSets] = useState(() =>
+    safeArray(project?.data?.optionSets)
+  );
+  const [newSetName, setNewSetName] = useState("");
+  const [newSetClassId, setNewSetClassId] = useState("");
+  const [newSetSubjects, setNewSetSubjects] = useState([]);
+  const [newSetPeriods, setNewSetPeriods] = useState(1);
 
-  const [selectedSubjectId, setSelectedSubjectId] = useState("");
+    const [selectedSubjectId, setSelectedSubjectId] = useState("");
   const [selectedClassIds, setSelectedClassIds] = useState([]);
   const [periodValues, setPeriodValues] = useState({});
+  const [doubleValues, setDoubleValues] = useState({});
 
   const [subjectName, setSubjectName] = useState("");
   const [shortName, setShortName] = useState("");
@@ -76,21 +93,29 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
   const lastProjectIdRef = useRef(project?.id);
 
   // Two independent skip flags (one per save stream).
-  const skipSubjectsSave = useRef(true);
+   const skipSubjectsSave = useRef(true);
   const skipMappingsSave = useRef(true);
+  const skipOptionSetsSave = useRef(true);
 
   // Two independent pending-save records so unmount / project switch never
   // lose a debounced save and always write back to the project they belong to.
-  const pendingSubjectsSaveRef = useRef(null);
+    const pendingSubjectsSaveRef = useRef(null);
   const pendingMappingsSaveRef = useRef(null);
+  const pendingOptionSetsSaveRef = useRef(null);
+  
+  const onSaveOptionSetsRef = useRef(onSaveOptionSets);
 
   useEffect(() => {
     onSaveRef.current = onSave;
   }, [onSave]);
 
-  useEffect(() => {
+    useEffect(() => {
     onSaveMappingsRef.current = onSaveMappings;
   }, [onSaveMappings]);
+
+  useEffect(() => {
+    onSaveOptionSetsRef.current = onSaveOptionSets;
+  }, [onSaveOptionSets]);
 
   // Flush pending saves BEFORE the new project's data replaces state.
   useLayoutEffect(() => {
@@ -121,8 +146,11 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
     setSubjects(
       safeArray(project?.data?.subjects).map(normalizeSubject)
     );
-    setMappings(
+        setMappings(
       safeArray(project?.data?.mappings).map(normalizeMapping)
+    );
+    setOptionSets(
+      safeArray(project?.data?.optionSets)
     );
 
     setSelectedSubjectId("");
@@ -139,8 +167,9 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
 
     // The next save-effect run (triggered by the state updates above) must
     // NOT persist the freshly loaded data back to the store.
-    skipSubjectsSave.current = true;
+        skipSubjectsSave.current = true;
     skipMappingsSave.current = true;
+    skipOptionSetsSave.current = true;
   }, [project?.id]);
 
   // Save subjects (debounced).
@@ -189,6 +218,26 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
     return () => clearTimeout(timerId);
   }, [mappings]);
 
+        // Save option sets (debounced).
+  useEffect(() => {
+    if (skipOptionSetsSave.current) {
+      skipOptionSetsSave.current = false;
+      return;
+    }
+    if (pendingOptionSetsSaveRef.current) {
+      clearTimeout(pendingOptionSetsSaveRef.current.timerId);
+      pendingOptionSetsSaveRef.current = null;
+    }
+    const data = optionSets;
+    const saveFn = onSaveOptionSetsRef.current;
+    const timerId = setTimeout(() => {
+      pendingOptionSetsSaveRef.current = null;
+      saveFn?.(data);
+    }, 500);
+    pendingOptionSetsSaveRef.current = { data, onSave: saveFn, timerId };
+    return () => clearTimeout(timerId);
+  }, [optionSets]);
+
   // Flush any pending save on unmount so navigation never loses work.
   useEffect(() => {
     return () => {
@@ -199,12 +248,19 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
         );
         pendingSubjectsSaveRef.current = null;
       }
-      if (pendingMappingsSaveRef.current) {
+            if (pendingMappingsSaveRef.current) {
         clearTimeout(pendingMappingsSaveRef.current.timerId);
         pendingMappingsSaveRef.current.onSave?.(
           pendingMappingsSaveRef.current.data
         );
         pendingMappingsSaveRef.current = null;
+      }
+      if (pendingOptionSetsSaveRef.current) {
+        clearTimeout(pendingOptionSetsSaveRef.current.timerId);
+        pendingOptionSetsSaveRef.current.onSave?.(
+          pendingOptionSetsSaveRef.current.data
+        );
+        pendingOptionSetsSaveRef.current = null;
       }
     };
   }, []);
@@ -469,7 +525,7 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
     }
   }
 
-  function updatePeriodValue(classId, value) {
+    function updatePeriodValue(classId, value) {
     if (value === "") {
       setPeriodValues((previous) => ({ ...previous, [classId]: "" }));
       return;
@@ -477,6 +533,16 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0 || n > 60) return;
     setPeriodValues((previous) => ({ ...previous, [classId]: Math.floor(n) }));
+  }
+
+  function updateDoubleValue(classId, value) {
+    if (value === "") {
+      setDoubleValues((previous) => ({ ...previous, [classId]: "" }));
+      return;
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 30) return;
+    setDoubleValues((previous) => ({ ...previous, [classId]: Math.floor(n) }));
   }
 
   function toggleClassSelection(classId) {
@@ -515,9 +581,35 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
       return periods === "" || !Number.isInteger(periods) || periods < 1;
     });
 
-    if (invalidClass) {
+        if (invalidClass) {
       setNotice(
         "Enter at least 1 whole period per week for every selected class."
+      );
+      return;
+    }
+
+    const invalidDoubles = validSelectedClassIds.find((classId) => {
+      const existing = mappings.find(
+        (item) =>
+          item.classId === classId && item.subjectId === selectedSubjectId
+      );
+      const periods = resolvePeriods(
+        classId,
+        existing,
+        selectedSubject?.name
+      );
+      const doubles =
+        doubleValues[classId] !== undefined
+          ? doubleValues[classId]
+          : existing?.doublePeriods ?? 0;
+      if (doubles === "") return false;
+      if (!Number.isInteger(doubles) || doubles < 0) return true;
+      return doubles * 2 > Number(periods);
+    });
+
+    if (invalidDoubles) {
+      setNotice(
+        "Double periods must be a whole number and 2 × doubles cannot exceed the weekly periods."
       );
       return;
     }
@@ -538,11 +630,17 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
           selectedSubject?.name
         );
 
+                const doubles =
+          doubleValues[classId] !== undefined
+            ? doubleValues[classId]
+            : existing?.doublePeriods ?? 0;
+
         const mapping = {
           id: existing?.id || createId(),
           classId,
           subjectId: selectedSubjectId,
           periodsPerWeek: Number(periods),
+          doublePeriods: Number(doubles) || 0,
         };
 
         if (existingIndex >= 0) {
@@ -556,6 +654,68 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
     });
 
     setNotice("Subject assignments saved successfully.");
+  }
+
+      function handleAddOptionSet() {
+    const name = newSetName.trim();
+    const periods = Number(newSetPeriods);
+
+    if (!newSetClassId || !name || newSetSubjects.length < 2 || periods < 1) {
+      setNotice("Option sets need a class, a name, at least 2 subjects, and periods >= 1.");
+      return;
+    }
+
+    // 1. Check if subjects are already part of an existing Option Set for this class
+    const existingSetsForClass = optionSets.filter(s => s.classId === newSetClassId);
+    for (const subId of newSetSubjects) {
+      const existingSet = existingSetsForClass.find(s => s.subjectIds.includes(subId));
+      if (existingSet) {
+        const subName = subjects.find(s => s.id === subId)?.name;
+        setNotice(`"${subName}" is already part of the "${existingSet.name}" Option Set.`);
+        return;
+      }
+    }
+
+    // 2. Check if the subjects are mapped to the class, and if their mapped periods match the Set's periods
+    for (const subId of newSetSubjects) {
+      const mapping = mappings.find(m => m.classId === newSetClassId && m.subjectId === subId);
+      const subName = subjects.find(s => s.id === subId)?.name;
+
+      if (!mapping) {
+        setNotice(`"${subName}" is not mapped to this class yet. Assign it in the Subject–Class–Periods section first.`);
+        return;
+      }
+      if (Number(mapping.periodsPerWeek) !== periods) {
+        setNotice(`"${subName}" is mapped to ${mapping.periodsPerWeek} periods/week, but the Option Set is set to ${periods}. They must match.`);
+        return;
+      }
+    }
+
+    // Passed validation — create the set
+    const newSet = {
+      id: createId(),
+      classId: newSetClassId,
+      name: name,
+      subjectIds: newSetSubjects,
+      periodsPerWeek: periods,
+      active: true,
+      mutuallyExclusiveWith: []
+    };
+
+    setOptionSets((prev) => [...prev, newSet]);
+    
+    // Reset form
+    setNewSetName("");
+    setNewSetClassId("");
+    setNewSetSubjects([]);
+    setNewSetPeriods(1);
+    setNotice(`${name} option set created.`);
+  }
+
+  function handleDeleteOptionSet(id, name) {
+    if (!window.confirm(`Delete the "${name}" option set?`)) return;
+    setOptionSets((prev) => prev.filter((s) => s.id !== id));
+    setNotice(`Option set deleted.`);
   }
 
   function removeMapping(mapping, schoolClass, subject) {
@@ -739,10 +899,11 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
           <select
             id="mapping-subject"
             value={selectedSubjectId}
-            onChange={(event) => {
+                        onChange={(event) => {
               setSelectedSubjectId(event.target.value);
               setSelectedClassIds([]);
               setPeriodValues({});
+              setDoubleValues({});
             }}
           >
             <option value="">Choose a subject</option>
@@ -829,7 +990,7 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
                         <strong>Class {schoolClass.name}</strong>
                       </label>
 
-                      <div className="subject-period-field">
+                                            <div className="subject-period-field">
                         <label>Periods per week</label>
                         <input
                           type="number"
@@ -840,6 +1001,28 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
                           value={displayValue}
                           onChange={(event) =>
                             updatePeriodValue(
+                              schoolClass.id,
+                              event.target.value
+                            )
+                          }
+                        />
+                      </div>
+
+                      <div className="subject-period-field">
+                        <label>Double periods per week (labs / practicals)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={Math.floor(Number(displayValue) / 2) || 0}
+                          step="1"
+                          inputMode="numeric"
+                          value={
+                            doubleValues[schoolClass.id] !== undefined
+                              ? doubleValues[schoolClass.id]
+                              : existingMapping?.doublePeriods ?? 0
+                          }
+                          onChange={(event) =>
+                            updateDoubleValue(
                               schoolClass.id,
                               event.target.value
                             )
@@ -870,6 +1053,111 @@ function SubjectLibrary({ project, onSave, onSaveMappings }) {
               </button>
             </div>
           </>
+        )}
+      </section>
+
+            {/* OPTION SETS (PARALLEL SUBJECTS) */}
+      <section className="subject-panel">
+        <div className="subject-panel-heading">
+          <div>
+            <h2>Option Sets (Parallel Subjects)</h2>
+            <p>
+              Group subjects that run at the same time. For example, create a "Sci-Elective" set 
+              with Math and Biology, so students split into different rooms during that period.
+            </p>
+          </div>
+        </div>
+
+        <div className="option-set-creator">
+          <div className="subject-form-grid" style={{ marginBottom: "15px" }}>
+            <div className="subject-form-field">
+              <label>Select Class</label>
+              <select value={newSetClassId} onChange={(e) => setNewSetClassId(e.target.value)}>
+                <option value="">Choose a class</option>
+                {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            
+            <div className="subject-form-field">
+              <label>Set Name</label>
+              <input 
+                type="text" 
+                placeholder="e.g. R3 or Sci-Elective" 
+                value={newSetName}
+                onChange={(e) => setNewSetName(e.target.value)}
+                maxLength={30}
+              />
+            </div>
+          </div>
+
+          {newSetClassId && (
+            <div style={{ marginBottom: "15px" }}>
+              <label style={{ display: "block", marginBottom: "8px", fontSize: "13px", fontWeight: 600 }}>Select Subjects in this Set</label>
+                            <div className="option-set-subject-picker">
+                {activeSubjects.map((sub) => {
+                  const mappedPeriods = mappings.find(m => m.classId === newSetClassId && m.subjectId === sub.id)?.periodsPerWeek || 0;
+                  return (
+                    <label key={sub.id} className="option-set-checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={newSetSubjects.includes(sub.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setNewSetSubjects(prev => [...prev, sub.id]);
+                            // Auto-fill the periods if they match the mapping
+                            if (mappedPeriods > 0) setNewSetPeriods(mappedPeriods);
+                          } else {
+                            setNewSetSubjects(prev => prev.filter(id => id !== sub.id));
+                          }
+                        }}
+                      />
+                      {sub.name} <span style={{ color: '#64748b', fontSize: '11px' }}>({mappedPeriods} p/w)</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="subject-form-field" style={{ maxWidth: "200px", marginBottom: "15px" }}>
+            <label>Periods per week</label>
+            <input 
+              type="number" 
+              min="1" 
+              max="20"
+              value={newSetPeriods}
+              onChange={(e) => setNewSetPeriods(e.target.value)}
+            />
+          </div>
+
+          <button type="button" className="subject-primary-btn" onClick={handleAddOptionSet}>
+            <Plus size={16} /> Create Option Set
+          </button>
+        </div>
+
+        {optionSets.length > 0 && (
+          <div style={{ marginTop: "30px" }}>
+            <h3 style={{ fontSize: "15px", marginBottom: "15px" }}>Active Option Sets</h3>
+            <div className="option-set-list">
+              {optionSets.map((set) => {
+                const clsName = classes.find(c => c.id === set.classId)?.name || "Unknown Class";
+                const subNames = set.subjectIds.map(id => subjects.find(s => s.id === id)?.name).join(" + ");
+                return (
+                  <div key={set.id} className="option-set-card">
+                    <div>
+                      <strong>{set.name}</strong> ({clsName})
+                      <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
+                        Subjects: {subNames} | {set.periodsPerWeek} periods/week
+                      </div>
+                    </div>
+                    <button type="button" className="subject-archive-btn" onClick={() => handleDeleteOptionSet(set.id, set.name)}>
+                      <X size={15} /> Delete
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </section>
 
