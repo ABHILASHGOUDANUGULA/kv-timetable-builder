@@ -1151,23 +1151,22 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
       ),
     ];
     const rows = days.map((day) => [
-      day,
-      ...schedule.map((item) => {
-        if (item.type === "break") return item.name;
-                const cellEntries = getAllEntriesAt(day, classItem.id, section.id, item.id);
-        if (!cellEntries.length) return "—";
-        
-        return cellEntries.map((entry) => {
-          const code =
-            getMappedTeacher(classItem.id, section.id, entry.subjectId).options.find(
-              (o) => o.teacher.id === entry.teacherId
-            )?.subjectCode || "";
-          const subject = getName(subjects, entry.subjectId);
-          const teacher = entry.teacherId ? getName(teachers, entry.teacherId) : "Teacher not assigned";
-          return `${subject}${code ? ` (${code})` : ""}\n${teacher}`;
-        }).join("\n---\n");
-      }),
-    ]);
+  day,
+  ...schedule.map((item) => {
+    if (item.type === "break") return item.name;
+    const cellEntries = getAllEntriesAt(day, classItem.id, section.id, item.id);
+    if (!cellEntries.length) return "—";
+
+    return cellEntries.map((entry) => {
+      // Subject code intentionally omitted — internal only.
+      const subject = getName(subjects, entry.subjectId);
+      const teacher = entry.teacherId
+        ? getName(teachers, entry.teacherId)
+        : "Teacher not assigned";
+      return `${subject}\n${teacher}`;
+    }).join("\n---\n");
+  }),
+]);
     openPrintDocument(
       buildPrintableHtml({
         title: `CLASS ${classItem.name} – SECTION ${section.name} TIMETABLE`,
@@ -1297,16 +1296,13 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
                     const cellEntries = getAllEntriesAt(day, classItem.id, section.id, item.id);
           if (!cellEntries.length) return "—";
           
-          return cellEntries.map((entry) => {
-            const code =
-              getMappedTeacher(classItem.id, section.id, entry.subjectId)
-                .options.find((o) => o.teacher.id === entry.teacherId)
-                ?.subjectCode || "";
+                    return cellEntries.map((entry) => {
+            // Subject code intentionally omitted — internal only.
             const subject = getName(subjects, entry.subjectId);
             const teacher = entry.teacherId
               ? getName(teachers, entry.teacherId)
               : "Teacher not assigned";
-            return `${subject}${code ? ` (${code})` : ""}\n${teacher}`;
+            return `${subject}\n${teacher}`;
           }).join("\n---\n");
         }),
       ];
