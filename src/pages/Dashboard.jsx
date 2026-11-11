@@ -293,11 +293,16 @@ export default function Dashboard({ session }) {
         return;
       }
 
-      let accountRows = rows || [];
-      if (accountRows.length === 0) {
-        const localProjects = readProjects();
-        if (localProjects.length > 0) {
-          const payload = localProjects.map((project) => ({
+            let accountRows = rows || [];
+      
+      // FIX: Check for local projects even if the cloud already has projects.
+      const localProjects = readProjects();
+      if (localProjects.length > 0) {
+        const cloudIds = new Set(accountRows.map((r) => r.id));
+        const toMigrate = localProjects.filter((p) => !cloudIds.has(p.id));
+
+        if (toMigrate.length > 0) {
+          const payload = toMigrate.map((project) => ({
             id: project.id,
             user_id: userId,
             title: project.schoolName || "Untitled school",
@@ -305,6 +310,7 @@ export default function Dashboard({ session }) {
             created_at: project.createdAt,
             updated_at: project.updatedAt,
           }));
+          
           const { data: migratedRows, error: migrationError } = await supabase
             .from("timetables")
             .upsert(payload, { onConflict: "id" })
@@ -318,13 +324,17 @@ export default function Dashboard({ session }) {
             setCloudLoaded(true);
             return;
           }
-          accountRows = migratedRows || payload;
-          setNotice(`Transferred ${localProjects.length} browser project(s) to your account.`);
-          try {
-  window.localStorage?.removeItem(STORAGE_KEY);
-} catch (error) {
-  console.error("Unable to clear migrated guest projects:", error);
-}
+          
+          // Merge the newly transferred projects with the existing cloud projects
+          accountRows = [...accountRows, ...(migratedRows || payload)];
+          setNotice(`Transferred ${toMigrate.length} browser project(s) to your account.`);
+        }
+        
+        // Clear local storage only after we are sure everything is safe
+        try {
+          window.localStorage?.removeItem(STORAGE_KEY);
+        } catch (error) {
+          console.error("Unable to clear migrated guest projects:", error);
         }
       }
 

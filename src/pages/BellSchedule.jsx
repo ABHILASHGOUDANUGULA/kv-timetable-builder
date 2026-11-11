@@ -394,7 +394,7 @@ useEffect(() => {
       }
 
       const periodEnd = currentTime + duration;
-      if (periodEnd >= MINUTES_PER_DAY) {
+      if (periodEnd > MINUTES_PER_DAY) {
         fail("The generated school day extends beyond midnight. Reduce the periods or adjust the timings.");
         return;
       }

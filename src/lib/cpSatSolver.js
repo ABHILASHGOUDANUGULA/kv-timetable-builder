@@ -157,10 +157,21 @@ export async function solveTimetableCpSat(params) {
     );
   });
 
+  let solverPromise = null;
+async function getSolver() {
+  if (!solverPromise) {
+    solverPromise = CpSolver.create().catch((err) => {
+      solverPromise = null; 
+      throw err;
+    });
+  }
+  return solverPromise;
+}
+
   // ─────────────────────────────── solver load ───────────────────────────────
   let solver;
   try {
-    solver = await CpSolver.create();
+    solver = await getSolver();
   } catch (err) {
     return {
       ok: false,

@@ -369,14 +369,17 @@ export default function TimetableBuilder({
   const [absences, setAbsences] = useState(() =>
     safeArray(project?.data?.absences).map(normalizeAbsence).filter(Boolean)
   );
-  const [substitutionDate, setSubstitutionDate] = useState(
-    () => new Date().toISOString().slice(0, 10)
-  );
-  const [absenceReasons, setAbsenceReasons] = useState({});
+    const getTodayLocal = () => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const [substitutionDate, setSubstitutionDate] = useState(getTodayLocal);
   const [historySearch, setHistorySearch] = useState("");
   const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
   const [historyReasonFilter, setHistoryReasonFilter] = useState("all");
-    const reasonKey = (date, teacherId) => `${date}::${teacherId}`;
   const [notice, setNotice] = useState("");
   const [noticeKind, setNoticeKind] = useState("info");
   const [saveStatus, setSaveStatus] = useState("saved");
@@ -1057,7 +1060,10 @@ if (dstEntry) {
   async function autoGenerate() {
     setIsGenerating(true);
     try {
-            const result = await solveTimetableAsync({
+      // FIX: Declare the missing variable so the app doesn't crash
+      const existingBeforeSolveIds = new Set(timetable.map((e) => e.id));
+
+      const result = await solveTimetableAsync({
         classes,
         subjects,
         teachers,
@@ -1759,10 +1765,10 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
             const entry = entries.find((e) => e.periodId === period.id);
             if (!entry) return "Free / No class";
                         const currentSub = substitutions.find(
-              (s) =>
-                s.timetableEntryId === entry.id &&
-                s.date === substitutionDate
-            );
+                          (s) =>
+                            s.timetableEntryId === entry.id &&
+                            s.date === substitutionDate
+                        );
             const classSec = `${getName(
               classes,
               entry.classId
@@ -2906,10 +2912,10 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
                             </td>
                           );
                         const currentSub = substitutions.find(
-                          (s) =>
-                            s.timetableEntryId === entry.id &&
-                            s.day === subDay
-                        );
+  (s) =>
+    s.timetableEntryId === entry.id &&
+    s.date === substitutionDate     // ← was: s.day === subDay
+);
                         const options = teachers
                           .filter(
                             (c) =>
@@ -3247,7 +3253,7 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
             TIMETABLE WORKSPACE / BUILD &amp; REVIEW
           </div>
           <h1>Timetable Builder</h1>
-          <p>
+                    <p>
             {project?.data?.school?.schoolName ||
               project?.schoolName ||
               "School"}{" "}
@@ -3255,6 +3261,11 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
             {project?.data?.school?.academicYear ||
               project?.academicYear ||
               ""}
+            {substitutions.some(s => s.date === substitutionDate) && (
+              <span style={{ marginLeft: 12, color: "#d97706", fontSize: 12, fontWeight: 600 }}>
+                ⚠ Substitutions active for {substitutionDate}
+              </span>
+            )}
           </p>
         </div>
                 <div className="tt-header-actions">
@@ -3335,15 +3346,31 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
               Auto-generate Timetable
             </h2>
           </div>
-          <button
-            type="button"
-            className="tt-generate-button"
-            onClick={autoGenerate}
-            disabled={isGenerating}
-            style={{ padding: "10px 20px", fontSize: "14px" }}
-          >
-            {isGenerating ? "Generating..." : "Generate Timetable"}
-          </button>
+                    <div style={{ display: "flex", gap: "10px" }}>
+            {timetable.length > 0 && (
+              <button
+                type="button"
+                className="tt-clear-all-button"
+                onClick={() => {
+                  if (window.confirm("Clear the entire timetable?")) {
+                    setTimetable([]);
+                    setSubstitutions([]);
+                  }
+                }}
+              >
+                <RotateCcw size={14} /> Clear
+              </button>
+            )}
+            <button
+              type="button"
+              className="tt-generate-button"
+              onClick={autoGenerate}
+              disabled={isGenerating}
+              style={{ padding: "10px 20px", fontSize: "14px" }}
+            >
+              {isGenerating ? "Generating..." : "Generate Timetable"}
+            </button>
+          </div>
         </div>
 
         <details style={{ marginTop: "16px" }}>
@@ -3546,30 +3573,6 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
               })}
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                flexWrap: "wrap",
-                marginTop: 14,
-              }}
-            >
-              {timetable.length > 0 && (
-                <button
-                  type="button"
-                  className="tt-clear-all-button"
-                  onClick={() => {
-                    if (window.confirm("Clear the entire timetable?")) {
-                      setTimetable([]);
-                      setSubstitutions([]);
-                    }
-                  }}
-                >
-                  <RotateCcw size={14} />
-                  Clear Timetable
-                </button>
-              )}
-            </div>
           </div>
         </details>
       </section>

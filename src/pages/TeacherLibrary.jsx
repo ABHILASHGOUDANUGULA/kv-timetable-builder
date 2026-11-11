@@ -351,9 +351,10 @@ function TeacherLibrary({ project, onSave }) {
           <p>Add and manage all teachers in your school.</p>
         </div>
 
-        <div className="teacher-library-project">
+                <div className="teacher-library-project">
           <Users size={18} />
           <span>{project?.schoolName || "Current School"}</span>
+          <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 8 }}>{saveStatus}</span>
         </div>
       </div>
 

@@ -59,6 +59,11 @@ export default function TeacherMapping({ project, onSave }) {
     () => safeArray(project?.data?.teachers).filter((t) => t && t.active !== false && asId(t.id)),
     [project?.data?.teachers]
   );
+    // FIX: Keep a list of ALL teachers (including archived) so their names still show up in history
+  const allTeachers = useMemo(
+    () => safeArray(project?.data?.teachers).filter((t) => t && asId(t.id)),
+    [project?.data?.teachers]
+  );
 
   const classes = useMemo(
     () => safeArray(project?.data?.classes).filter((c) => c && c.active !== false && asId(c.id)),
@@ -392,11 +397,10 @@ export default function TeacherMapping({ project, onSave }) {
     );
   }
 
-  function getTeacherName(teacherId) {
-    return (
-      teachers.find((teacher) => asId(teacher.id) === asId(teacherId))?.name ||
-      "Unknown teacher"
-    );
+    function getTeacherName(teacherId) {
+    const teacher = allTeachers.find((t) => asId(t.id) === asId(teacherId));
+    if (!teacher) return "Unknown teacher";
+    return teacher.active === false ? `${teacher.name} (Archived)` : teacher.name;
   }
 
   function getSectionName(classId, sectionId) {
