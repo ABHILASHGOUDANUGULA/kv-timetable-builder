@@ -5,7 +5,7 @@ import {
   Wand2, GripVertical, ListChecks, RotateCcw, Clock, Pin, Trash2,
   FileSpreadsheet, Undo2, Redo2,
 } from "lucide-react";
-import { solveTimetable } from "../lib/timetableSolver";
+import { solveTimetableAsync } from "../lib/timetableSolver";
 import "../styles/timetable-builder.css";
 
 /* ------------------------------------------------------------------ */
@@ -1054,10 +1054,10 @@ if (dstEntry) {
   /* ------------------------------------------------------------------ */
   /* AUTO GENERATION                                                    */
   /* ------------------------------------------------------------------ */
-  function autoGenerate() {
+  async function autoGenerate() {
     setIsGenerating(true);
     try {
-            const result = solveTimetable({
+            const result = await solveTimetableAsync({
         classes,
         subjects,
         teachers,
@@ -1090,13 +1090,18 @@ if (dstEntry) {
     ? timetable.filter((e) => e.fixed === true).length
     : 0;
 
-let msg = `Generated ${result.newEntriesCount} new period${
+const preservedCount =
+  result.timetable.filter((e) => e.fixed === true).length +
+  (genMode === "empty"
+    ? result.timetable.filter((e) => !e.fixed && existingBeforeSolveIds.has(e.id)).length
+    : 0);
+const newlyGenerated = Math.max(0, result.newEntriesCount - preservedCount);
+
+let msg = `Timetable generated: ${result.newEntriesCount} period${
   result.newEntriesCount === 1 ? "" : "s"
-}${
-  result.fixedCount ? ` (plus ${result.fixedCount} fixed)` : ""
-}${
-  lockedPreserved
-    ? ` — preserved ${lockedPreserved} manually-locked period(s)`
+} total${
+  preservedCount > 0
+    ? ` (${newlyGenerated} new, ${preservedCount} preserved)`
     : ""
 }.`;
 
