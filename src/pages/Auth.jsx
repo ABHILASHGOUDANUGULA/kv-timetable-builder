@@ -20,13 +20,22 @@ export default function Auth({ onAuthSuccess }) {
     setError("");
 
     try {
-      if (mode === "signup") {
+            if (mode === "signup") {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
         });
 
         if (error) throw error;
+
+        // CHECK FOR EXISTING USER
+        // If identities is empty, it means Supabase returned a fake user 
+        // because this email is already registered.
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          setError("An account with this email already exists. Please log in instead.");
+          setLoading(false);
+          return;
+        }
 
         if (data.session) {
           setMessage("Account created successfully!");
