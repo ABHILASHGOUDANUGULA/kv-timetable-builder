@@ -163,8 +163,7 @@ const navigation = [
   { label: "Teachers", icon: Users },
   { label: "Teacher Mapping", icon: ClipboardList },
   { label: "Timetable Builder", icon: CalendarDays },
-  { label: "Reports & Export", icon: FileDown },
-];
+  ];
 
 const steps = [
   "School Setup",
@@ -1231,37 +1230,7 @@ export default function Dashboard({ session }) {
                 <p>Restore a previously downloaded project.</p>
                 <ChevronRight size={18} className="action-arrow" />
               </button>
-
-              <button
-                className="action-card"
-                onClick={() =>
-                  setNotice(
-                    "PDF and Excel export will be developed after the timetable builder."
-                  )
-                }
-              >
-                <div className="action-icon green">
-                  <FileDown size={23} />
-                </div>
-                <h3>Export Timetable</h3>
-                <p>Download PDF and Excel timetables.</p>
-                <ChevronRight size={18} className="action-arrow" />
-              </button>
-
-              <button
-                className="action-card"
-                onClick={() =>
-                  setNotice("Login and cloud saving will be implemented later.")
-                }
-              >
-                <div className="action-icon orange">
-                  <Cloud size={23} />
-                </div>
-                <h3>Cloud Storage</h3>
-                <p>Save your work online with an account.</p>
-                <ChevronRight size={18} className="action-arrow" />
-              </button>
-            </div>
+                                  </div>
 
             <input
               id="project-upload"

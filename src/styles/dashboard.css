@@ -19,13 +19,16 @@
 
 .sidebar {
   width: 260px;
-  min-height: 100vh;
+  height: 100vh;
+  position: sticky;
+  top: 0;
   background: #ffffff;
   border-right: 1px solid #e9eaf0;
   padding: 25px 16px;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow-y: auto;
 }
 
 .brand {
@@ -277,8 +280,8 @@
 
 .primary-button {
   color: white;
-  background: #5d50d8;
-  border: 1px solid #5d50d8;
+  background: var(--primary);
+  border: 1px solid var(--primary);
 }
 
 .primary-button:hover {
@@ -425,51 +428,73 @@
 /* EMPTY STATE */
 
 .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  background: white;
-  border: 1px dashed #d9d9e5;
-  border-radius: 12px;
-  padding: 40px 15px;
+  padding: 60px 20px;
+  background: #ffffff;
+  border: 2px dashed #cbd5e1;
+  border-radius: 16px;
+  transition: all 0.2s ease;
+}
+
+.empty-state:hover {
+  border-color: #a5b4fc;
+  background: #f8fafc;
 }
 
 .empty-icon {
   display: grid;
   place-items: center;
-  width: 60px;
-  height: 60px;
-  border-radius: 15px;
-  background: #f1efff;
-  color: #6153d8;
-  margin: 0 auto 14px;
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: #e0e7ff;
+  color: #4f46e5;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15);
 }
 
 .empty-state h3 {
-  font-size: 15px;
-  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px;
 }
 
 .empty-state p {
-  color: #9093a3;
-  font-size: 12px;
-  margin: 8px 0 18px;
+  color: #64748b;
+  font-size: 14px;
+  max-width: 400px;
+  margin: 0 0 24px;
+  line-height: 1.5;
 }
 
 /* PROJECT LIST */
 
 .project-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
 }
 
 .project-card {
   display: flex;
-  align-items: center;
-  gap: 15px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
   background: white;
   border: 1px solid #e9eaf0;
-  padding: 15px;
-  border-radius: 11px;
+  padding: 20px;
+  border-radius: 12px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.project-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.06);
 }
 
 .project-school-icon {
@@ -484,7 +509,7 @@
 
 .project-info {
   flex: 1;
-  min-width: 0;
+  width: 100%;
 }
 
 .project-info h3 {
@@ -597,15 +622,27 @@
 /* NOTIFICATIONS */
 
 .notice {
+  position: fixed;
+  top: 85px;
+  right: 24px;
+  z-index: 9999;
   background: #f0efff;
   border: 1px solid #dfdcff;
   color: #5548ce;
-  padding: 12px 15px;
+  padding: 14px 20px;
   border-radius: 9px;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
   display: flex;
-  justify-content: space-between;
-  margin-bottom: 20px;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 10px 25px rgba(85, 72, 206, 0.15);
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 .notice button {
@@ -817,8 +854,10 @@
   }
 
   .project-card .secondary-button {
-    width: 100%;
-  }
+  width: 100%;
+  margin-top: 10px;
+  justify-content: center;
+}
 
   .breadcrumb {
     font-size: 11px;

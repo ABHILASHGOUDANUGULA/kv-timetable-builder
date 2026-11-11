@@ -68,7 +68,7 @@ export default function Auth({ onAuthSuccess }) {
       <div className="auth-card">
         <div className="auth-logo">📚</div>
 
-        <h1>KV Timetable Builder</h1>
+        <h1>School<span style={{ color: "#6254df" }}>TT</span></h1>
 
         <p className="auth-subtitle">
           {mode === "login"

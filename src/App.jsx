@@ -98,6 +98,8 @@ function App() {
   }
 }}
               style={accountButtonStyle}
+              onMouseOver={(e) => (e.target.style.background = "#4338ca")}
+              onMouseOut={(e) => (e.target.style.background = "#4f46e5")}
             >
               Logout
             </button>
@@ -131,10 +133,18 @@ function App() {
       }}
     />
 
-    <div style={guestContainerStyle}>
+            <div style={guestContainerStyle}>
       <button
         onClick={() => setGuestMode(true)}
         style={guestButtonStyle}
+        onMouseOver={(e) => {
+          e.target.style.background = "#f8fafc";
+          e.target.style.borderColor = "#94a3b8";
+        }}
+        onMouseOut={(e) => {
+          e.target.style.background = "white";
+          e.target.style.borderColor = "#cbd5e1";
+        }}
       >
         Continue Without Account
       </button>
@@ -148,8 +158,10 @@ const loadingStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  fontSize: "18px",
-  color: "#334155",
+  fontSize: "16px",
+  fontWeight: "600",
+  color: "#4f46e5",
+  background: "#f8fafc",
 };
 
 const accountBarStyle = {
@@ -157,44 +169,53 @@ const accountBarStyle = {
   alignItems: "center",
   justifyContent: "space-between",
   flexWrap: "wrap",
-  gap: "10px",
-  padding: "10px 20px",
-  background: "#eff6ff",
-  borderBottom: "1px solid #dbeafe",
+  gap: "12px",
+  padding: "12px 24px",
+  background: "#ffffff",
+  borderBottom: "1px solid #e2e8f0",
   fontSize: "14px",
+  fontWeight: "500",
+  color: "#1e293b",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
 };
+
 const unauthWrapperStyle = {
   minHeight: "100vh",
   display: "flex",
   flexDirection: "column",
-  background: "#f3f6fb",
+  background: "#f8fafc",
 };
 
 const accountButtonStyle = {
   border: "none",
-  borderRadius: "6px",
-  padding: "8px 14px",
-  background: "#2563eb",
+  borderRadius: "8px",
+  padding: "8px 16px",
+  background: "#4f46e5",
   color: "white",
   cursor: "pointer",
   fontWeight: "600",
+  fontSize: "13px",
+  transition: "background 0.2s ease",
 };
 
 const guestContainerStyle = {
   display: "flex",
   justifyContent: "center",
-  padding: "0 20px 24px",
-  background: "#f3f6fb",
+  padding: "0 24px 32px",
+  background: "#f8fafc",
 };
 
 const guestButtonStyle = {
   border: "1px solid #cbd5e1",
   borderRadius: "8px",
-  padding: "12px 20px",
+  padding: "12px 24px",
   background: "white",
-  color: "#334155",
+  color: "#475569",
   cursor: "pointer",
   fontWeight: "600",
+  fontSize: "14px",
+  transition: "all 0.2s ease",
+  boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
 };
 
 export default App;

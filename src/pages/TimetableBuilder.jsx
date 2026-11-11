@@ -3328,304 +3328,288 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
 
       {/* ============ AUTO-GENERATION CONFIG ============ */}
       <section className="tt-builder-config">
-        <div className="tt-builder-config-head">
+        <div className="tt-builder-config-head" style={{ marginBottom: 0 }}>
           <div>
-            <h2>
-              <Wand2
-                size={16}
-                style={{ verticalAlign: "middle", marginRight: 6 }}
-              />
+            <h2 style={{ display: "flex", alignItems: "center" }}>
+              <Wand2 size={18} style={{ marginRight: 8, color: "#2457c5" }} />
               Auto-generate Timetable
             </h2>
-            <p>
-              Builds every class-section timetable honouring weekly periods,
-              teacher mappings and clash prevention. Any cell can still be
-              edited afterwards.
-            </p>
           </div>
-        </div>
-
-        <div className="tt-mode-switch">
-  <button
-    type="button"
-    className={genMode === "empty" ? "active" : ""}
-    onClick={() => setGenMode("empty")}
-  >
-    Fill Empty Slots
-  </button>
-  <button
-    type="button"
-    className={genMode === "full" ? "active" : ""}
-    onClick={() => setGenMode("full")}
-  >
-    Regenerate Unlocked
-  </button>
-</div>
-<p style={{ fontSize: 12, color: "#64748b", margin: "6px 0 12px" }}>
-  Manually edited, dragged, or teacher-assigned periods are locked 🔒 and
-  preserved in both modes. Only unlocked periods are regenerated. Use
-  "Clear Timetable" to start from scratch.
-</p>
-
-                <div className="tt-config-grid">
-          <label>
-            Max same subject / day
-            <input
-              type="number"
-              min="0"
-              max="6"
-              value={genConfig.maxPerDay}
-              onChange={(e) =>
-                setGenConfig({
-                  ...genConfig,
-                  maxPerDay: Math.max(0, Number(e.target.value) || 0),
-                })
-              }
-            />
-          </label>
-          <label>
-            Max teacher periods / day
-            <input
-              type="number"
-              min="0"
-              max="12"
-              value={genConfig.maxTeacherPeriodsPerDay}
-              onChange={(e) =>
-                setGenConfig({
-                  ...genConfig,
-                  maxTeacherPeriodsPerDay: Math.max(0, Number(e.target.value) || 0),
-                })
-              }
-            />
-          </label>
-          <label className="tt-check-label">
-            <input
-              type="checkbox"
-              checked={genConfig.avoidConsecutive}
-              onChange={(e) =>
-                setGenConfig({
-                  ...genConfig,
-                  avoidConsecutive: e.target.checked,
-                })
-              }
-            />
-            Avoid consecutive same subject
-          </label>
-          <label className="tt-check-label">
-            <input
-              type="checkbox"
-              checked={genConfig.balanceWorkload}
-              onChange={(e) =>
-                setGenConfig({
-                  ...genConfig,
-                  balanceWorkload: e.target.checked,
-                })
-              }
-            />
-            Balance teacher workload
-          </label>
-        </div>
-
-        {/* Fixed rules */}
-        <div className="tt-fixed-config">
-          <h3>
-            <Pin
-              size={14}
-              style={{ verticalAlign: "middle", marginRight: 6 }}
-            />
-            Fixed Rules — pin a subject to a specific slot
-          </h3>
-          <p>
-            Useful for lab periods, assembly-linked subjects or specific
-            day+period rules. Fixed rules are placed before auto-generation.
-          </p>
-
-          <div className="tt-fixed-row">
-            <select
-              value={fixDraft.classId}
-              onChange={(e) =>
-                setFixDraft({
-                  ...fixDraft,
-                  classId: e.target.value,
-                  sectionId: "",
-                  subjectId: "",
-                })
-              }
-            >
-              <option value="">Class</option>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={fixDraft.sectionId}
-              onChange={(e) =>
-                setFixDraft({ ...fixDraft, sectionId: e.target.value })
-              }
-              disabled={!fixDraft.classId}
-            >
-              <option value="">Section</option>
-              {fixSections.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={fixDraft.subjectId}
-              onChange={(e) =>
-                setFixDraft({ ...fixDraft, subjectId: e.target.value })
-              }
-              disabled={!fixDraft.classId}
-            >
-              <option value="">Subject</option>
-              {fixSubjects.map((m) => (
-                <option key={m.subjectId} value={m.subjectId}>
-                  {getName(subjects, m.subjectId)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={fixDraft.day}
-              onChange={(e) =>
-                setFixDraft({ ...fixDraft, day: e.target.value })
-              }
-            >
-              {days.map((d) => (
-                <option key={d}>{d}</option>
-              ))}
-            </select>
-            <select
-              value={fixDraft.periodId}
-              onChange={(e) =>
-                setFixDraft({ ...fixDraft, periodId: e.target.value })
-              }
-            >
-              <option value="">Period</option>
-              {periods.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={addFixedRule}>
-              + Add Rule
-            </button>
-          </div>
-
-          {fixedRules.map((r) => {
-            const sec = getSections(
-              classes.find((c) => c.id === r.classId)
-            ).find((s) => s.id === r.sectionId);
-            const period = periods.find((p) => p.id === r.periodId);
-            return (
-              <div className="tt-fixed-rule" key={r.id}>
-                <span>
-                  <b>
-                    {getName(classes, r.classId)}-{sec?.name || "?"}
-                  </b>{" "}
-                  · {getName(subjects, r.subjectId)} · {r.day} ·{" "}
-                  {period?.name || "—"}
-                </span>
-                <button type="button" onClick={() => removeFixedRule(r.id)}>
-                  <Trash2 size={13} /> Remove
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-            marginTop: 14,
-          }}
-        >
           <button
             type="button"
             className="tt-generate-button"
             onClick={autoGenerate}
             disabled={isGenerating}
+            style={{ padding: "10px 20px", fontSize: "14px" }}
           >
-            <Wand2
-              size={15}
-              style={{ verticalAlign: "middle", marginRight: 5 }}
-            />
-            {isGenerating ? " Generating…" : " Generate Timetable"}
+            {isGenerating ? "Generating..." : "Generate Timetable"}
           </button>
-                    {timetable.length > 0 && (
-            <button
-              type="button"
-              className="tt-clear-all-button"
-              onClick={() => {
-                if (window.confirm("Clear the entire timetable?")) {
-                  setTimetable([]);
-                  setSubstitutions([]);
-                }
+        </div>
+
+        <details style={{ marginTop: "16px" }}>
+          <summary style={{ cursor: "pointer", color: "#2457c5", fontWeight: 600, fontSize: "13px", outline: "none" }}>
+            ⚙️ Click here to adjust generation settings and fixed rules
+          </summary>
+          
+          <div style={{ marginTop: "16px", borderTop: "1px solid #dce3ec", paddingTop: "16px" }}>
+            
+            <div className="tt-mode-switch">
+              <button
+                type="button"
+                className={genMode === "empty" ? "active" : ""}
+                onClick={() => setGenMode("empty")}
+              >
+                Fill Empty Slots
+              </button>
+              <button
+                type="button"
+                className={genMode === "full" ? "active" : ""}
+                onClick={() => setGenMode("full")}
+              >
+                Regenerate Unlocked
+              </button>
+            </div>
+            
+            <p style={{ fontSize: 12, color: "#64748b", margin: "6px 0 12px" }}>
+              Manually edited, dragged, or teacher-assigned periods are locked 🔒 and
+              preserved in both modes. Only unlocked periods are regenerated. Use
+              "Clear Timetable" to start from scratch.
+            </p>
+
+            <div className="tt-config-grid">
+              <label>
+                Max same subject / day
+                <input
+                  type="number"
+                  min="0"
+                  max="6"
+                  value={genConfig.maxPerDay}
+                  onChange={(e) =>
+                    setGenConfig({
+                      ...genConfig,
+                      maxPerDay: Math.max(0, Number(e.target.value) || 0),
+                    })
+                  }
+                />
+              </label>
+              <label>
+                Max teacher periods / day
+                <input
+                  type="number"
+                  min="0"
+                  max="12"
+                  value={genConfig.maxTeacherPeriodsPerDay}
+                  onChange={(e) =>
+                    setGenConfig({
+                      ...genConfig,
+                      maxTeacherPeriodsPerDay: Math.max(0, Number(e.target.value) || 0),
+                    })
+                  }
+                />
+              </label>
+              <label className="tt-check-label">
+                <input
+                  type="checkbox"
+                  checked={genConfig.avoidConsecutive}
+                  onChange={(e) =>
+                    setGenConfig({
+                      ...genConfig,
+                      avoidConsecutive: e.target.checked,
+                    })
+                  }
+                />
+                Avoid consecutive same subject
+              </label>
+              <label className="tt-check-label">
+                <input
+                  type="checkbox"
+                  checked={genConfig.balanceWorkload}
+                  onChange={(e) =>
+                    setGenConfig({
+                      ...genConfig,
+                      balanceWorkload: e.target.checked,
+                    })
+                  }
+                />
+                Balance teacher workload
+              </label>
+            </div>
+
+            {/* Fixed rules */}
+            <div className="tt-fixed-config">
+              <h3>
+                <Pin
+                  size={14}
+                  style={{ verticalAlign: "middle", marginRight: 6 }}
+                />
+                Fixed Rules — pin a subject to a specific slot
+              </h3>
+              <p>
+                Useful for lab periods, assembly-linked subjects or specific
+                day+period rules. Fixed rules are placed before auto-generation.
+              </p>
+
+              <div className="tt-fixed-row">
+                <select
+                  value={fixDraft.classId}
+                  onChange={(e) =>
+                    setFixDraft({
+                      ...fixDraft,
+                      classId: e.target.value,
+                      sectionId: "",
+                      subjectId: "",
+                    })
+                  }
+                >
+                  <option value="">Class</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={fixDraft.sectionId}
+                  onChange={(e) =>
+                    setFixDraft({ ...fixDraft, sectionId: e.target.value })
+                  }
+                  disabled={!fixDraft.classId}
+                >
+                  <option value="">Section</option>
+                  {fixSections.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={fixDraft.subjectId}
+                  onChange={(e) =>
+                    setFixDraft({ ...fixDraft, subjectId: e.target.value })
+                  }
+                  disabled={!fixDraft.classId}
+                >
+                  <option value="">Subject</option>
+                  {fixSubjects.map((m) => (
+                    <option key={m.subjectId} value={m.subjectId}>
+                      {getName(subjects, m.subjectId)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={fixDraft.day}
+                  onChange={(e) =>
+                    setFixDraft({ ...fixDraft, day: e.target.value })
+                  }
+                >
+                  {days.map((d) => (
+                    <option key={d}>{d}</option>
+                  ))}
+                </select>
+                <select
+                  value={fixDraft.periodId}
+                  onChange={(e) =>
+                    setFixDraft({ ...fixDraft, periodId: e.target.value })
+                  }
+                >
+                  <option value="">Period</option>
+                  {periods.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={addFixedRule}>
+                  + Add Rule
+                </button>
+              </div>
+
+              {fixedRules.map((r) => {
+                const sec = getSections(
+                  classes.find((c) => c.id === r.classId)
+                ).find((s) => s.id === r.sectionId);
+                const period = periods.find((p) => p.id === r.periodId);
+                return (
+                  <div className="tt-fixed-rule" key={r.id}>
+                    <span>
+                      <b>
+                        {getName(classes, r.classId)}-{sec?.name || "?"}
+                      </b>{" "}
+                      · {getName(subjects, r.subjectId)} · {r.day} ·{" "}
+                      {period?.name || "—"}
+                    </span>
+                    <button type="button" onClick={() => removeFixedRule(r.id)}>
+                      <Trash2 size={13} /> Remove
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 14,
               }}
             >
-              <RotateCcw size={14} />
-              Clear Timetable
-            </button>
-          )}
-        </div>
+              {timetable.length > 0 && (
+                <button
+                  type="button"
+                  className="tt-clear-all-button"
+                  onClick={() => {
+                    if (window.confirm("Clear the entire timetable?")) {
+                      setTimetable([]);
+                      setSubstitutions([]);
+                    }
+                  }}
+                >
+                  <RotateCcw size={14} />
+                  Clear Timetable
+                </button>
+              )}
+            </div>
+          </div>
+        </details>
       </section>
 
-            {/* Bulk export — every class-section or every teacher on a single sheet */}
-      <section className="tt-builder-config">
-        <div className="tt-builder-config-head">
-          <div>
-            <h2>
-              <FileSpreadsheet
-                size={16}
-                style={{ verticalAlign: "middle", marginRight: 6 }}
-              />
-              Bulk Excel Export
-            </h2>
-            <p>
-              Download every class-section (or every teacher) as a single
-              sheet — each timetable block is stacked vertically with a blank
-              row between them. Scroll down the sheet to see every section.
-            </p>
-          </div>
-        </div>
-        <div className="tt-export-buttons">
-          <button
-            type="button"
-            className="tt-excel-button"
-            onClick={exportAllSectionsExcel}
-            disabled={!classes.length || !schedule.length}
-          >
-            <FileSpreadsheet size={15} /> All Class-Sections (
-            {classes.reduce((s, c) => s + getSections(c).length, 0)}{" "}
-            sections)
-          </button>
-          <button
-            type="button"
-            className="tt-excel-button"
-            onClick={exportAllTeachersExcel}
-            disabled={!teachers.length || !schedule.length}
-          >
-            <FileSpreadsheet size={15} /> All Teachers ({teachers.length}{" "}
-            teachers)
-          </button>
-        </div>
-      </section>
+      {/* Bulk Export */}
+      <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "13px", fontWeight: 600, color: "#64748b", alignSelf: "center", marginRight: "10px" }}>
+          Bulk Download:
+        </span>
+        <button
+          type="button"
+          className="tt-excel-button"
+          onClick={exportAllSectionsExcel}
+          disabled={!classes.length || !schedule.length}
+        >
+          <FileSpreadsheet size={15} /> All Class-Sections
+        </button>
+        <button
+          type="button"
+          className="tt-excel-button"
+          onClick={exportAllTeachersExcel}
+          disabled={!teachers.length || !schedule.length}
+        >
+          <FileSpreadsheet size={15} /> All Teachers
+        </button>
+      </div>
 
             {notice && (
         <div
           className={`tt-notice tt-notice-${noticeKind}`}
           role="status"
-          style={{
-            position: "sticky",
-            top: "10px",
-            zIndex: 50,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-            alignItems: "flex-start", // Aligns icon to top if text is long
+                    style={{
+            position: "fixed",
+            top: "24px",
+            right: "24px",
+            zIndex: 9999,
+            width: "380px",
+            maxWidth: "calc(100vw - 48px)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
+            alignItems: "flex-start",
           }}
         >
           <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "2px" }} />

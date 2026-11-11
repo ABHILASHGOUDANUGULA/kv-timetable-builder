@@ -78,21 +78,51 @@
 .tt-notice-info   { background:#eff6ff; border-color:#93c5fd; color:#1e3a8a; }
 
 /* ---------- Tabs ---------- */
+/* Modern Tabs */
 .tt-tabs {
-  display:flex; align-items:center; gap:5px; overflow-x:auto; padding:5px; margin:0 0 16px;
-  border:1px solid var(--tt-line); border-radius:11px; background:var(--tt-soft);
-  scrollbar-width:thin;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 6px;
+  margin: 0 0 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f1f5f9;
+  scrollbar-width: none;
 }
+
+.tt-tabs::-webkit-scrollbar {
+  display: none;
+}
+
 .tt-tabs button {
-  display:inline-flex; align-items:center; justify-content:center; gap:7px;
-  flex:0 0 auto; border:1px solid transparent; border-radius:8px; padding:10px 12px;
-  background:transparent; color:#526075; font-size:12px; font-weight:700;
-  white-space:nowrap; cursor:pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
-.tt-tabs button:hover { background:#fff; color:var(--tt-primary); }
+
+.tt-tabs button:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
 .tt-tabs button.active {
-  background:#fff; color:var(--tt-primary); border-color:#d6e2fa;
-  box-shadow:0 1px 3px #17203312;
+  background: #ffffff;
+  color: #4f46e5;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 /* ---------- Panels / class groups ---------- */
@@ -903,4 +933,45 @@
   font-size: 9px;
   color: #4b5563;
   font-weight: 500;
+}
+/* Make the Day column stick to the left when scrolling horizontally */
+.timetable-builder-page .tt-edit-table th:first-child,
+.timetable-builder-page .tt-edit-table td:first-child {
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 5 !important;
+  background-color: #f7f9fc !important;
+  box-shadow: 2px 0 5px -2px rgba(0,0,0,0.1) !important;
+}
+/* Mobile Timetable Fixes */
+@media (max-width: 768px) {
+  /* Ensure the table doesn't crush */
+  .timetable-builder-page .tt-table {
+    min-width: 800px !important;
+  }
+
+  /* Make the table container scroll smoothly */
+  .timetable-builder-page .tt-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: inset -10px 0 10px -10px rgba(0,0,0,0.1);
+    padding-bottom: 10px;
+  }
+
+  /* Stack the header buttons neatly */
+  .timetable-builder-page .tt-header-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  
+  /* Make the bottom export buttons fill the width */
+  .timetable-builder-page .tt-export-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+  .timetable-builder-page .tt-export-buttons button {
+    width: 100%;
+    justify-content: center;
+  }
 }

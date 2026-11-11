@@ -1,14 +1,19 @@
-
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
 
 :root {
   font-family: "Inter", Arial, sans-serif;
-  color: #20243a;
-  background: #f7f8fc;
+  color: #1e293b;
+  background: #f8fafc;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Unified App Colors */
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --border-color: #e2e8f0;
+  --surface: #ffffff;
 }
 
 * {
@@ -26,4 +31,113 @@ input,
 select,
 textarea {
   font-family: inherit;
+}
+/* Global Form Inputs styling */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="time"],
+input[type="date"],
+select,
+textarea {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #1e293b;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  background-color: #ffffff;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+}
+
+/* Custom Checkbox styling */
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #4f46e5;
+  cursor: pointer;
+}
+/* Prevent iOS auto-zoom on inputs */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="time"],
+  input[type="date"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+/* =========================================
+   PRINT LAYOUT (Hides UI when printing)
+   ========================================= */
+@media print {
+  /* Hide the sidebar, topbar, and navigation */
+  .sidebar,
+  .topbar,
+  .mobile-overlay,
+  .tt-header-actions,
+  .tt-tabs,
+  .tt-builder-config,
+  .tt-warning,
+  .tt-notice,
+  .tt-export-buttons,
+  .tt-clear-all-button,
+  .tt-clear,
+  .tt-footnote,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Make the page take full width */
+  body, 
+  .app-shell, 
+  .main-area, 
+  .content,
+  .timetable-builder-page {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+
+  /* Ensure the table prints properly on A4 paper */
+  .tt-table-wrap {
+    overflow: visible !important;
+    border: none !important;
+  }
+
+  .tt-table {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 9pt !important; /* Use point size for print */
+    page-break-inside: auto;
+  }
+
+  .tt-section-card {
+    border: none !important;
+    box-shadow: none !important;
+    page-break-after: always; /* Break page after each class section */
+  }
+
+  /* Ensure text is black for printing */
+  .tt-table th, .tt-table td {
+    color: black !important;
+    border-color: #999 !important;
+  }
 }

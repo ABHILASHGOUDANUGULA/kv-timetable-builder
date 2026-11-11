@@ -1057,8 +1057,11 @@ function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets }) {
       </section>
 
             {/* OPTION SETS (PARALLEL SUBJECTS) */}
-      <section className="subject-panel">
-        <div className="subject-panel-heading">
+            <details className="subject-panel" style={{ cursor: "pointer" }}>
+        <summary style={{ padding: "10px", fontWeight: "bold", color: "#315f9c" }}>
+          ⚙️ Advanced: Option Sets (Parallel Subjects) - Click to expand
+        </summary>
+        <div className="subject-panel-heading" style={{ marginTop: "20px" }}>
           <div>
             <h2>Option Sets (Parallel Subjects)</h2>
             <p>
@@ -1159,7 +1162,7 @@ function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets }) {
             </div>
           </div>
         )}
-      </section>
+      </details>
 
       {/* CLASS-WISE SUBJECT REVIEW */}
       <section className="subject-panel">
