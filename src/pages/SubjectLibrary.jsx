@@ -57,7 +57,7 @@ function normalizeMapping(mapping) {
   };
 }
 
-function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets }) {
+function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets, onContinue }) {
   // -------------------- State --------------------
   const [subjects, setSubjects] = useState(() =>
     safeArray(project?.data?.subjects).map(normalizeSubject)
@@ -730,7 +730,79 @@ function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets }) {
       previous.filter((item) => item.id !== mapping.id)
     );
 
-    setNotice(`${subject.name} removed from Class ${schoolClass.name}.`);
+        setNotice(`${subject.name} removed from Class ${schoolClass.name}.`);
+  }
+
+  function importSubjectsFromCsv(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = String(e.target.result || "");
+      const lines = text.split(/\r?\n/).filter((line) => line.trim());
+      const parsed = lines
+        .map((line) => {
+          const [rawName, rawShort] = line.split(",").map((s) => s.trim());
+          return { name: rawName || "", shortName: rawShort || "" };
+        })
+        .filter((s) => s.name);
+
+      if (!parsed.length) {
+        setNotice("No valid rows found. Use the format: Subject Name,Short Name");
+        return;
+      }
+
+      const existingNames = new Set(
+        subjects
+          .filter((s) => s.active !== false)
+          .map((s) => String(s.name || "").trim().toLowerCase())
+      );
+
+      const added = [];
+      const skipped = [];
+      parsed.forEach((s) => {
+        const key = s.name.toLowerCase();
+        if (existingNames.has(key)) {
+          skipped.push(s.name);
+        } else {
+          existingNames.add(key);
+          added.push({
+            id: createId(),
+            name: s.name,
+            shortName: s.shortName,
+            active: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      });
+
+      if (added.length) setSubjects((prev) => [...prev, ...added]);
+            setNotice(
+        `${added.length} subject(s) imported.` +
+          (skipped.length ? ` ${skipped.length} duplicate(s) skipped.` : "")
+      );
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+
+  function downloadSampleSubjectCsv() {
+    const sample =
+      "Mathematics,Maths\n" +
+      "English,Eng\n";
+    const blob = new Blob([sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sample-subjects.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setNotice(
+      "Sample CSV downloaded. Open it in Notepad or Excel, replace the two sample rows with your subjects, then Import CSV."
+    );
   }
 
   // -------------------- Render --------------------
@@ -853,7 +925,7 @@ function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets }) {
             </div>
           </div>
 
-          <div className="subject-form-actions">
+                    <div className="subject-form-actions">
             <button type="submit" className="subject-primary-btn">
               {editingId ? (
                 <>
@@ -877,6 +949,31 @@ function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets }) {
                 Cancel
               </button>
             )}
+
+                       <input
+              id="subject-csv-upload"
+              type="file"
+              accept=".csv,text/csv"
+              hidden
+              onChange={importSubjectsFromCsv}
+            />
+            <button
+              type="button"
+              className="subject-secondary-btn"
+              onClick={() =>
+                document.getElementById("subject-csv-upload").click()
+              }
+            >
+              Import CSV (Name,Short)
+            </button>
+
+            <button
+              type="button"
+              className="subject-secondary-btn"
+              onClick={downloadSampleSubjectCsv}
+            >
+              Download Sample CSV
+            </button>
           </div>
         </form>
       </section>
@@ -1404,9 +1501,29 @@ function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets }) {
         </div>
       )}
 
-      <div className="subject-auto-save">
-        <Check size={16} />
-        Changes are saved automatically to this school project. Assignments require at least 1 period/week; maximum 60.
+            <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "16px",
+          marginTop: "20px",
+        }}
+      >
+        <div className="subject-auto-save" style={{ margin: 0 }}>
+          <Check size={16} />
+          Changes are saved automatically to this school project. Assignments require at least 1 period/week; maximum 60.
+        </div>
+
+        <button
+          type="button"
+          className="subject-primary-btn"
+          onClick={() => onContinue?.()}
+          style={{ padding: "12px 22px" }}
+        >
+          Next: Teachers →
+        </button>
       </div>
     </div>
   );

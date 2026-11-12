@@ -137,14 +137,15 @@ function normalizeProject(project) {
   if (!project || typeof project !== "object") return null;
   if (!project.id || typeof project.id !== "string") return null;
 
-  return {
+    return {
     ...project,
     schoolName: String(project.schoolName || "").trim(),
     academicYear: String(project.academicYear || "2026-27"),
     status: project.status || "Draft",
     updatedAt: project.updatedAt || new Date().toISOString(),
     createdAt: project.createdAt || new Date().toISOString(),
-        data: migrateToOptionSets({ ...DEFAULT_DATA(), ...(project.data || {}) }),
+    version: Number(project.version) || 0,
+    data: migrateToOptionSets({ ...DEFAULT_DATA(), ...(project.data || {}) }),
   };
 }
 
@@ -371,7 +372,7 @@ export default function Dashboard({ session }) {
 
     setSaveStatus("saving");
     const timer = window.setTimeout(async () => {
-      const payload = projects.map((project) => ({
+             const payload = projects.map((project) => ({
         id: project.id,
         user_id: userId,
         title: project.schoolName || "Untitled school",
@@ -538,10 +539,11 @@ export default function Dashboard({ session }) {
     setProjects((previous) =>
       previous.map((project) =>
         project.id === projectId
-          ? {
+                    ? {
               ...project,
               ...extraUpdates,
               updatedAt: new Date().toISOString(),
+              version: (Number(project.version) || 0) + 1,
               data: {
                 ...project.data,
                 [dataKey]: newData,
@@ -586,7 +588,7 @@ export default function Dashboard({ session }) {
   function updateProjectTeacherMappings(data) {
     updateProjectData("teacherMappings", data);
   }
-  function updateProjectTeachers(data) {
+     function updateProjectTeachers(data) {
     updateProjectData("teachers", data);
   }
   function updateProjectTimetable(data) {
@@ -1029,12 +1031,13 @@ export default function Dashboard({ session }) {
         {/* SUBJECTS PAGE */}
         {activePage === "Subjects" &&
           (selectedProject ? (
-                        <SubjectLibrary
+                                                <SubjectLibrary
               key={selectedProject.id}
               project={selectedProject}
               onSave={updateProjectSubjects}
               onSaveMappings={updateProjectMappings}
               onSaveOptionSets={updateProjectOptionSets}
+              onContinue={() => setActivePage("Teachers")}
             />
           ) : (
             <div className="content">
@@ -1057,10 +1060,11 @@ export default function Dashboard({ session }) {
         {/* TEACHERS PAGE */}
         {activePage === "Teachers" &&
           (selectedProject ? (
-            <TeacherLibrary
+                        <TeacherLibrary
               key={selectedProject.id}
               project={selectedProject}
               onSave={updateProjectTeachers}
+              onContinue={() => setActivePage("Teacher Mapping")}
             />
           ) : (
             <div className="content">
@@ -1080,13 +1084,39 @@ export default function Dashboard({ session }) {
             </div>
           ))}
 
+                {/* ROOMS PAGE */}
+        {activePage === "Rooms" &&
+          (selectedProject ? (
+            <RoomLibrary
+              key={selectedProject.id}
+              project={selectedProject}
+              onSave={updateProjectRooms}
+            />
+          ) : (
+            <div className="content">
+              <div className="empty-state">
+                <div className="empty-icon">
+                  <Building2 size={30} />
+                </div>
+                <h3>No School Project Selected</h3>
+                <p>Please create or open a school project first.</p>
+                <button
+                  className="primary-button"
+                  onClick={() => setActivePage("Dashboard")}
+                >
+                  Back to Dashboard
+                </button>
+              </div>
+            </div>
+          ))}
         {/* TEACHER MAPPING PAGE */}
         {activePage === "Teacher Mapping" &&
           (selectedProject ? (
-            <TeacherMapping
+                        <TeacherMapping
               key={selectedProject.id}
               project={selectedProject}
               onSave={updateProjectTeacherMappings}
+              onContinue={() => setActivePage("Timetable Builder")}
             />
           ) : (
             <div className="content">

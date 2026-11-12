@@ -42,7 +42,7 @@ function parseTeacherInput(input) {
     });
 }
 
-function TeacherLibrary({ project, onSave }) {
+function TeacherLibrary({ project, onSave, onContinue }) {
   const [teachers, setTeachers] = useState(() =>
     Array.isArray(project?.data?.teachers) ? project.data.teachers.map((t) => ({ ...t, id: String(t.id ?? createId()), name: String(t.name ?? "").trim(), nickname: String(t.nickname ?? "").trim(), active: t.active !== false })) : []
   );
@@ -339,7 +339,79 @@ function TeacherLibrary({ project, onSave }) {
       previous.map((t) => (String(t.id) === String(teacher.id) ? { ...t, active: true, updatedAt: new Date().toISOString() } : t))
     );
 
-    setNotice(`${teacher.name} restored.`);
+        setNotice(`${teacher.name} restored.`);
+  }
+
+  function importTeachersFromCsv(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = String(e.target.result || "");
+      const lines = text.split(/\r?\n/).filter((line) => line.trim());
+      const parsed = lines
+        .map((line) => {
+          const [rawName, rawNick] = line.split(",").map((s) => s.trim());
+          return { name: rawName || "", nickname: rawNick || "" };
+        })
+        .filter((t) => t.name && t.nickname);
+
+      if (!parsed.length) {
+        setNotice("No valid rows found. Use the format: Full Name,Nickname");
+        return;
+      }
+
+      const existingNames = new Set(
+        teachers
+          .filter((t) => t.active !== false)
+          .map((t) => String(t.name || "").trim().toLowerCase())
+      );
+
+      const added = [];
+      const skipped = [];
+      parsed.forEach((t) => {
+        const key = t.name.toLowerCase();
+        if (existingNames.has(key)) {
+          skipped.push(t.name);
+        } else {
+          existingNames.add(key);
+          added.push({
+            id: createId(),
+            name: t.name,
+            nickname: t.nickname,
+            active: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      });
+
+      if (added.length) setTeachers((prev) => [...prev, ...added]);
+            setNotice(
+        `${added.length} teacher(s) imported.` +
+          (skipped.length ? ` ${skipped.length} duplicate(s) skipped.` : "")
+      );
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+
+  function downloadSampleTeacherCsv() {
+    const sample =
+      "ABHILASH,AG\n" +
+      "RAMYA,RM\n";
+    const blob = new Blob([sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sample-teachers.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setNotice(
+      "Sample CSV downloaded. Open it in Notepad or Excel, replace the two sample rows with your teachers, then Import CSV."
+    );
   }
 
   // -------------------- Render --------------------
@@ -451,7 +523,7 @@ function TeacherLibrary({ project, onSave }) {
           </>
         )}
 
-        <div className="teacher-form-actions">
+                <div className="teacher-form-actions">
           <button
             type="button"
             className="teacher-primary-btn"
@@ -468,6 +540,31 @@ function TeacherLibrary({ project, onSave }) {
             onClick={() => setBulkInput("")}
           >
             Clear Text Box
+          </button>
+
+                    <input
+            id="teacher-csv-upload"
+            type="file"
+            accept=".csv,text/csv"
+            hidden
+            onChange={importTeachersFromCsv}
+          />
+          <button
+            type="button"
+            className="teacher-secondary-btn"
+            onClick={() =>
+              document.getElementById("teacher-csv-upload").click()
+            }
+          >
+            Import CSV (Name,Nickname)
+          </button>
+
+          <button
+            type="button"
+            className="teacher-secondary-btn"
+            onClick={downloadSampleTeacherCsv}
+          >
+            Download Sample CSV
           </button>
         </div>
       </section>
@@ -623,9 +720,29 @@ function TeacherLibrary({ project, onSave }) {
         </div>
       )}
 
-      <div className="teacher-auto-save">
-        <Check size={16} />
-        Changes are saved automatically to this school project.
+            <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "16px",
+          marginTop: "20px",
+        }}
+      >
+        <div className="teacher-auto-save" style={{ margin: 0 }}>
+          <Check size={16} />
+          Changes are saved automatically to this school project.
+        </div>
+
+        <button
+          type="button"
+          className="teacher-primary-btn"
+          onClick={() => onContinue?.()}
+          style={{ padding: "12px 22px" }}
+        >
+          Next: Teacher Mapping →
+        </button>
       </div>
     </div>
   );

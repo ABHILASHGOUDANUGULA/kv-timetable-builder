@@ -481,7 +481,7 @@ export default function TimetableBuilder({
     setAbsences(
       safeArray(project?.data?.absences).map(normalizeAbsence).filter(Boolean)
     );
-    setSubstitutionDate(new Date().toISOString().slice(0, 10));
+    setSubstitutionDate(getTodayLocal());
     setHistorySearch("");
     setHistoryStatusFilter("all");
     setHistoryReasonFilter("all");
@@ -685,15 +685,13 @@ export default function TimetableBuilder({
     });
   }
 
-  function removeAbsenceIfSafe(date, teacherId) {
+    function removeAbsenceIfSafe(date, teacherId) {
     const a = findAbsence(date, teacherId);
     if (!a) return;
-    // Only drop the record if the user hasn't touched it and no periods
-    // were assigned a substitute — otherwise it's an audit entry.
     if (a.verifiedStatus !== "pending") return;
     if (String(a.reasonNote || "").trim()) return;
     const hasSubs = substitutions.some(
-      (s) => s.originalTeacherId === teacherId && s.day === subDay
+      (s) => s.originalTeacherId === teacherId && s.date === date
     );
     if (hasSubs) return;
     setAbsences((prev) => prev.filter((x) => x.id !== a.id));
@@ -765,7 +763,7 @@ export default function TimetableBuilder({
   /* ------------------------------------------------------------------ */
   /* manual editing                                                     */
   /* ------------------------------------------------------------------ */
-    function saveSlot(
+       function saveSlot(
     day,
     classId,
     sectionId,
@@ -784,8 +782,9 @@ export default function TimetableBuilder({
     const mapped = getMappedTeacher(classId, sectionId, subjectId);
     const existing = getEntry(day, classId, sectionId, periodId);
 
-    if (!subjectId) {
+        if (!subjectId) {
       if (existing) {
+        saveHistory();
         setTimetable((p) => p.filter((e) => e.id !== existing.id));
         setSubstitutions((p) =>
           p.filter((s) => s.timetableEntryId !== existing.id)
@@ -1058,87 +1057,94 @@ if (dstEntry) {
   /* AUTO GENERATION                                                    */
   /* ------------------------------------------------------------------ */
   async function autoGenerate() {
-    setIsGenerating(true);
-    try {
-      // FIX: Declare the missing variable so the app doesn't crash
-      const existingBeforeSolveIds = new Set(timetable.map((e) => e.id));
+  setIsGenerating(true);
+  try {
+    // Snapshot fixed slots BEFORE solving so we can restore the flag after.
+    const fixedSnapshot = timetable
+      .filter((e) => e.fixed === true)
+      .map((e) => ({
+        classId: e.classId,
+        sectionId: e.sectionId,
+        day: e.day,
+        periodId: e.periodId,
+        subjectId: e.subjectId,
+      }));
 
-      const result = await solveTimetableAsync({
-        classes,
-        subjects,
-        teachers,
-        subjectMappings,
-        teacherMappings,
-        optionSets, // <--- ADD THIS LINE
-        periods,
-        days,
-        existingTimetable: timetable,
-        substitutions,
-        fixedRules,
-        config: genConfig,
-        mode: genMode,
-      });
+    const wasFixed = (entry) =>
+      fixedSnapshot.some(
+        (f) =>
+          f.classId === entry.classId &&
+          f.sectionId === entry.sectionId &&
+          f.day === entry.day &&
+          f.periodId === entry.periodId &&
+          f.subjectId === entry.subjectId
+      );
 
-            if (!result.ok) {
-        flash("error", result.message);
-        return;
-      }
+    const result = await solveTimetableAsync({
+      classes,
+      subjects,
+      teachers,
+      subjectMappings,
+      teacherMappings,
+      optionSets,
+      periods,
+      days,
+      existingTimetable: timetable,
+      substitutions,
+      fixedRules,
+      config: genConfig,
+      mode: genMode,
+    });
 
-      saveHistory(); // <--- ADD HERE
-      setTimetable(result.timetable);
-
-            // Substitutions are audit records — never deleted on regeneration.
-      // Stale records (timetableEntryId no longer present) are simply
-      // ignored by the date-scoped substitutionMap above.
-
-            const lockedPreserved =
-  genMode === "full"
-    ? timetable.filter((e) => e.fixed === true).length
-    : 0;
-
-const preservedCount =
-  result.timetable.filter((e) => e.fixed === true).length +
-  (genMode === "empty"
-    ? result.timetable.filter((e) => !e.fixed && existingBeforeSolveIds.has(e.id)).length
-    : 0);
-const newlyGenerated = Math.max(0, result.newEntriesCount - preservedCount);
-
-let msg = `Timetable generated: ${result.newEntriesCount} period${
-  result.newEntriesCount === 1 ? "" : "s"
-} total${
-  preservedCount > 0
-    ? ` (${newlyGenerated} new, ${preservedCount} preserved)`
-    : ""
-}.`;
-
-      if (result.unplacedCount) {
-        // Build a detailed list of exactly what failed
-        const failures = result.unplacedGroups.map((group) => {
-          const className = classes.find((c) => c.id === group.classId)?.name || "Unknown";
-          const sectionName = getSections(classes.find((c) => c.id === group.classId)).find((s) => s.id === group.sectionId)?.name || "Unknown";
-          const subjectName = subjects.find((s) => s.id === group.subjectId)?.name || "Unknown";
-          return `Class ${className}-${sectionName} (${subjectName}: ${group.remaining} left)`;
-        });
-
-        const uniqueFailures = [...new Set(failures)];
-        
-        msg += ` ${result.unplacedCount} subject-section(s) could not be fully placed.`;
-        
-        // Show the detailed failures as a red error banner (so it doesn't disappear too quickly)
-        flash(
-          "error",
-          `Could not place: ${uniqueFailures.join(", ")}. Check teacher mappings or increase available slots.`
-        );
-      } else {
-        flash("success", msg);
-      }
-    } catch (err) {
-      console.error("Timetable generation failed:", err);
-      flash("error", "Timetable generation failed. Check the browser console.");
-    } finally {
-      setIsGenerating(false);
+    if (!result.ok) {
+      flash("error", result.message);
+      return;
     }
+
+    // Restore `fixed: true` on any entry that was manually locked before.
+    const restored = result.timetable.map((e) =>
+      wasFixed(e) ? { ...e, fixed: true } : e
+    );
+
+    saveHistory();
+    setTimetable(restored);
+
+    const preservedCount = restored.filter((e) => e.fixed === true).length;
+    const newlyGenerated = Math.max(0, restored.length - preservedCount);
+
+    let msg = `Timetable generated: ${restored.length} period${
+      restored.length === 1 ? "" : "s"
+    } total${
+      preservedCount > 0
+        ? ` (${newlyGenerated} new, ${preservedCount} preserved)`
+        : ""
+    }.`;
+
+    if (result.unplacedCount) {
+      const failures = result.unplacedGroups.map((group) => {
+        const className = classes.find((c) => c.id === group.classId)?.name || "Unknown";
+        const sectionName =
+          getSections(classes.find((c) => c.id === group.classId)).find(
+            (s) => s.id === group.sectionId
+          )?.name || "Unknown";
+        const subjectName = subjects.find((s) => s.id === group.subjectId)?.name || "Unknown";
+        return `Class ${className}-${sectionName} (${subjectName}: ${group.remaining} left)`;
+      });
+      const uniqueFailures = [...new Set(failures)];
+      flash(
+        "error",
+        `Could not place: ${uniqueFailures.join(", ")}. Check teacher mappings or increase available slots.`
+      );
+    } else {
+      flash("success", msg);
+    }
+  } catch (err) {
+    console.error("Timetable generation failed:", err);
+    flash("error", "Timetable generation failed. Check the browser console.");
+  } finally {
+    setIsGenerating(false);
   }
+}
 
   /* ------------------------------------------------------------------ */
   /* PDF exports                                                        */
@@ -2042,6 +2048,9 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
       );
       return;
     }
+    if (String(substituteTeacherId) === String(absentTeacherId)) {
+      return flash("error", "A teacher cannot substitute for themselves.");
+    }
     if (
       !isFreeForSubstitution(
         substituteTeacherId,
@@ -2135,10 +2144,10 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
     const sectionMappings = getMappedSubjects(classItem.id);
     return (
       <div className="tt-section-card" key={`${classItem.id}-${section.id}`}>
-        <div className="tt-section-heading">
+                <div className="tt-section-heading">
           <div>
             <h3>
-              {classItem.name} – Section {section.name}
+              Class {classItem.name} – Section {section.name}
             </h3>
             <span>
               {sectionMappings.reduce(
@@ -2404,7 +2413,7 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
                                     </small>
                                   );
                                 })()}
-                              {entry && (
+                                                            {entry && (
                                 <button
                                   type="button"
                                   className="tt-clear"
@@ -3017,9 +3026,21 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
         )
       );
 
-    const removeRecord = (id) => {
+        const removeRecord = (id) => {
       if (!window.confirm("Delete this absence record? This cannot be undone.")) return;
+      const absence = absences.find((a) => a.id === id);
       setAbsences((prev) => prev.filter((a) => a.id !== id));
+      if (absence) {
+        setSubstitutions((prev) =>
+          prev.filter(
+            (s) =>
+              !(
+                s.date === absence.date &&
+                s.originalTeacherId === absence.teacherId
+              )
+          )
+        );
+      }
     };
 
     const coverage = (a) => {
@@ -3285,7 +3306,7 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
               <Redo2 size={16} /> Redo
             </button>
           </div>
-          <span
+                    <span
             className={`tt-save-state ${
               saveStatus === "saving" ? "tt-saving" : ""
             }`}
@@ -3297,13 +3318,6 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
             )}
             {saveStatus === "saving" ? " Saving…" : saveStatus === "error" ? " Save failed" : " Auto-saved"}
           </span>
-          <button
-            className="tt-print"
-            type="button"
-            onClick={() => window.print()}
-          >
-            <Printer size={16} /> Print current view
-          </button>
         </div>
       </header>
 
@@ -3347,8 +3361,9 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
               <button
                 type="button"
                 className="tt-clear-all-button"
-                onClick={() => {
+                                onClick={() => {
                   if (window.confirm("Clear the entire timetable?")) {
+                    saveHistory();
                     setTimetable([]);
                     setSubstitutions([]);
                   }
@@ -3357,12 +3372,36 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
                 <RotateCcw size={14} /> Clear
               </button>
             )}
-            <button
+                       <button
               type="button"
               className="tt-generate-button"
               onClick={autoGenerate}
               disabled={isGenerating}
-              style={{ padding: "10px 20px", fontSize: "14px" }}
+              style={{
+                padding: "10px 20px",
+                fontSize: "14px",
+                fontWeight: 700,
+                background: isGenerating ? "#94a3b8" : "#2563eb",
+                backgroundColor: isGenerating ? "#94a3b8" : "#2563eb",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "8px",
+                cursor: isGenerating ? "not-allowed" : "pointer",
+                boxShadow: isGenerating ? "none" : "0 2px 8px rgba(37, 99, 235, 0.28)",
+                transition: "background 0.15s ease, box-shadow 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (!isGenerating) {
+                  e.currentTarget.style.background = "#1d4ed8";
+                  e.currentTarget.style.backgroundColor = "#1d4ed8";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isGenerating) {
+                  e.currentTarget.style.background = "#2563eb";
+                  e.currentTarget.style.backgroundColor = "#2563eb";
+                }
+              }}
             >
               {isGenerating ? "Generating..." : "Generate Timetable"}
             </button>
@@ -3655,9 +3694,9 @@ let msg = `Timetable generated: ${result.newEntriesCount} period${
       <section className="tt-panel">
         {view === "class" &&
           (classes.length ? (
-            classes.map((c) => (
+                        classes.map((c) => (
               <div className="tt-class-group" key={c.id}>
-                <h2>{c.name}</h2>
+                <h2>Class {c.name}</h2>
                 {getSections(c).length ? (
                   getSections(c).map((sec) => renderSectionTable(c, sec))
                 ) : (

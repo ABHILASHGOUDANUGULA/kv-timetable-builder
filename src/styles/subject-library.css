@@ -892,3 +892,167 @@
   font-size: 14px;
   color: #1e293b;
 }
+/* =========================================================
+   COMPACT LAYOUT — side-by-side class review & tighter tables
+   ========================================================= */
+
+/* Class-wise Subject & Period Review: cards sit side by side in a grid */
+.subject-class-review-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+/* Compact card padding */
+.subject-class-review-card {
+  padding: 14px 16px;
+}
+
+.subject-class-review-heading {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.subject-class-review-heading h3 {
+  font-size: 14px;
+}
+
+.subject-class-review-heading span {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+/* Compact table inside class review cards */
+.subject-review-table-wrapper .subject-table {
+  font-size: 12px;
+}
+
+.subject-review-table-wrapper .subject-table th {
+  padding: 6px 9px;
+  font-size: 11px;
+}
+
+.subject-review-table-wrapper .subject-table td {
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+/* Compact remove button inside class review cards */
+.subject-review-table-wrapper .subject-archive-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  gap: 4px;
+}
+
+/* Compact the main Subject List table */
+.subject-table-wrapper .subject-table th {
+  padding: 10px 13px;
+}
+
+.subject-table-wrapper .subject-table td {
+  padding: 10px 13px;
+  font-size: 12px;
+}
+
+/* One column on narrow phones */
+@media (max-width: 720px) {
+  .subject-class-review-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Wider cards on large desktops for readability */
+@media (min-width: 1400px) {
+  .subject-class-review-list {
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  }
+}
+/* =========================================================
+   COMPACT SUBJECT LIST TABLE
+   Fixed column widths prevent stretching on wide screens
+   ========================================================= */
+
+/* Use fixed layout so column widths are honoured */
+.subject-table-wrapper .subject-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* Sl. No. — narrow */
+.subject-table-wrapper .subject-table th:nth-child(1),
+.subject-table-wrapper .subject-table td:nth-child(1) {
+  width: 70px;
+  max-width: 70px;
+  text-align: center;
+}
+
+/* Full Subject Name — takes remaining space */
+.subject-table-wrapper .subject-table th:nth-child(2),
+.subject-table-wrapper .subject-table td:nth-child(2) {
+  width: auto;
+}
+
+/* Short Display Name — fixed narrow column */
+.subject-table-wrapper .subject-table th:nth-child(3),
+.subject-table-wrapper .subject-table td:nth-child(3) {
+  width: 190px;
+  max-width: 190px;
+}
+
+/* Actions — fixed narrow column */
+.subject-table-wrapper .subject-table th:nth-child(4),
+.subject-table-wrapper .subject-table td:nth-child(4) {
+  width: 240px;
+  max-width: 240px;
+}
+
+/* Tighter row height in the Subject List */
+.subject-table-wrapper .subject-table td {
+  padding: 9px 12px;
+  line-height: 1.35;
+}
+
+.subject-table-wrapper .subject-table th {
+  padding: 9px 12px;
+}
+
+/* Compact Edit / Archive buttons */
+.subject-table-wrapper .subject-edit-btn,
+.subject-table-wrapper .subject-archive-btn,
+.subject-table-wrapper .subject-restore-btn {
+  padding: 5px 9px;
+  font-size: 11px;
+  gap: 4px;
+}
+
+/* Hide the "Short Display Name" column on very narrow phones
+   so the important columns still fit */
+@media (max-width: 640px) {
+  .subject-table-wrapper .subject-table th:nth-child(3),
+  .subject-table-wrapper .subject-table td:nth-child(3) {
+    display: none;
+  }
+
+  .subject-table-wrapper .subject-table th:nth-child(4),
+  .subject-table-wrapper .subject-table td:nth-child(4) {
+    width: 160px;
+    max-width: 160px;
+  }
+
+  .subject-table-wrapper .subject-table th:nth-child(1),
+  .subject-table-wrapper .subject-table td:nth-child(1) {
+    width: 50px;
+    max-width: 50px;
+  }
+}
+
+/* Truncate very long subject names with an ellipsis so every row
+   stays a single line tall. Full name shows on hover via browser tooltip. */
+.subject-table-wrapper .subject-table td:nth-child(2),
+.subject-table-wrapper .subject-table td:nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

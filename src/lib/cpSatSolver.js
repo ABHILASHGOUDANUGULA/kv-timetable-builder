@@ -128,16 +128,18 @@ export async function solveTimetableCpSat(params) {
     });
   });
 
-  // Fail fast if a mapped subject has no teachers
+    // Fail fast if a mapped subject has no teachers
   for (const [key, tids] of teachersFor) {
-    const [secKey, subId] = key.split("::");
+    const parts = key.split("::");
+    const subId = parts[parts.length - 1];
+    const secKey = parts.slice(0, -1).join("::");
     if (tids.length === 0 && weeklyPeriods.get(key) > 0) {
       const sec = allSections.find((s) => s.key === secKey);
       const sub = subjects.find((s) => s.id === subId);
       return {
         ok: false,
         reason: "missing-teacher",
-        message: `"${sub?.name || subId}" in ${sec?.classId || ""} has no teacher mapped. Map a teacher before generating.`,
+        message: `"${sub?.name || subId}" in class ${sec?.classId || ""} section ${sec?.sectionId || ""} has no teacher mapped. Map a teacher before generating.`,
       };
     }
   }

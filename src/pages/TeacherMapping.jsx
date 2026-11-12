@@ -51,7 +51,7 @@ function evenSplit(teacherIds, required) {
   return result;
 }
 
-export default function TeacherMapping({ project, onSave }) {
+export default function TeacherMapping({ project, onSave, onContinue }) {
   // ==========================================
   // 1. PROJECT DATA
   // ==========================================
@@ -1865,6 +1865,40 @@ export default function TeacherMapping({ project, onSave }) {
           </>
         )}
       </section>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "16px",
+          marginTop: "20px",
+        }}
+      >
+        <div className="tm-save-status" style={{ margin: 0 }}>
+          <Check size={16} />
+          Changes are saved automatically to this school project.
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onContinue?.()}
+          style={{
+            padding: "12px 22px",
+            border: "none",
+            borderRadius: "8px",
+            background: "#4f46e5",
+            color: "#fff",
+            fontSize: "14px",
+            fontWeight: "700",
+            cursor: "pointer",
+            boxShadow: "0 2px 6px rgba(79, 70, 229, 0.25)",
+          }}
+        >
+          Next: Timetable Builder →
+        </button>
+      </div>
     </div>
   );
 }

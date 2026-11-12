@@ -975,3 +975,89 @@
     justify-content: center;
   }
 }
+
+/* =========================================================
+   CENTERED BOLD SECTION HEADINGS
+   - "Class I – Section A" becomes bold 20px, weight 800
+   - Title is perfectly centered inside the card
+   - "0 periods assigned" is also centered underneath
+   - PDF / Excel buttons stay pinned to the top-right
+   ========================================================= */
+
+.tt-section-heading {
+  position: relative !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  min-height: 64px !important;
+  margin: 0 0 14px !important;
+  padding: 0 150px !important;
+  box-sizing: border-box !important;
+}
+
+.tt-section-heading > div:first-child {
+  text-align: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.tt-section-heading h3 {
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.3px !important;
+  line-height: 1.25 !important;
+  margin: 0 0 6px !important;
+  color: #172033 !important;
+  text-align: center !important;
+  overflow-wrap: anywhere !important;
+}
+
+.tt-section-heading span {
+  display: block !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #64748b !important;
+  text-align: center !important;
+}
+
+.tt-section-heading .tt-export-buttons {
+  position: absolute !important;
+  top: 50% !important;
+  right: 12px !important;
+  transform: translateY(-50%) !important;
+  display: flex !important;
+  gap: 6px !important;
+  flex-wrap: nowrap !important;
+}
+
+.tt-class-group > h2 {
+  text-align: center !important;
+  font-size: 24px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.4px !important;
+  margin: 0 0 16px !important;
+  padding: 0 0 10px !important;
+  border-bottom: 2px solid #dbe5f5 !important;
+  color: #172033 !important;
+}
+
+@media (max-width: 720px) {
+  .tt-section-heading {
+    flex-direction: column !important;
+    min-height: auto !important;
+    padding: 0 !important;
+    gap: 10px !important;
+  }
+
+  .tt-section-heading .tt-export-buttons {
+    position: static !important;
+    transform: none !important;
+    justify-content: center !important;
+    width: 100% !important;
+    flex-wrap: wrap !important;
+  }
+
+  .tt-section-heading h3 {
+    font-size: 18px !important;
+  }
+}

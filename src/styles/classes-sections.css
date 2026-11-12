@@ -1664,3 +1664,61 @@
   background: #fff5f5;
   color: #b33c3c;
 }
+/* =========================================================
+   COMPACT LAYOUT — class cards & final preview side by side
+   ========================================================= */
+
+/* "3. Class-wise Configuration" — cards flow into a responsive grid
+   instead of stacking one per row */
+.class-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 13px;
+  align-items: start;
+}
+
+/* "4. Final Preview" — rows flow into a compact grid */
+.classes-preview-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+/* Prevent long class / section names from breaking the grid cells */
+.classes-preview-row {
+  min-width: 0;
+}
+
+.classes-preview-row strong,
+.classes-preview-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Slightly tighter padding when a card sits inside a grid cell */
+.class-config-card {
+  padding: 14px;
+}
+
+/* Tighter gap between the name row and the section editor */
+.class-config-top {
+  margin-bottom: 12px;
+}
+
+/* Single column on phones so a card isn't squeezed to <340px */
+@media (max-width: 720px) {
+  .class-list {
+    grid-template-columns: 1fr;
+  }
+
+  .classes-preview-list {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
+/* Single column on very small phones for preview rows too */
+@media (max-width: 420px) {
+  .classes-preview-list {
+    grid-template-columns: 1fr;
+  }
+}
