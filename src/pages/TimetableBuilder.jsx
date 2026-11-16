@@ -442,21 +442,39 @@ export default function TimetableBuilder({
   /* Reload project data on project switch. Skip on the initial mount since
      useState already used the same data. */
   const isFirstMount = useRef(true);
-    // Save the current timetable to the undo stack before a change
+    
+  // Save timetable and substitutions together for complete undo/redo.
   const saveHistory = () => {
     setUndoStack((prev) => {
-      const next = [...prev, timetable];
-      if (next.length > 50) return next.slice(1); // Max 50 steps
-      return next;
+      const next = [
+        ...prev,
+        {
+          timetable: [...timetable],
+          substitutions: [...substitutions],
+        },
+      ];
+      return next.length > 50 ? next.slice(1) : next;
     });
-    setRedoStack([]); // Clear redo on new action
+
+    setRedoStack([]);
   };
 
   const handleUndo = () => {
     if (undoStack.length === 0) return;
+
     const previous = undoStack[undoStack.length - 1];
-    setRedoStack((prev) => [timetable, ...prev]);
-    setTimetable(previous);
+
+    setRedoStack((prev) => [
+      {
+        timetable: [...timetable],
+        substitutions: [...substitutions],
+      },
+      ...prev,
+    ]);
+
+    setTimetable(previous.timetable);
+    setSubstitutions(previous.substitutions);
+
     setUndoStack((prev) => prev.slice(0, -1));
     setNotice("Undo successful.");
     setNoticeKind("info");
@@ -464,20 +482,36 @@ export default function TimetableBuilder({
 
   const handleRedo = () => {
     if (redoStack.length === 0) return;
+
     const next = redoStack[0];
-    setUndoStack((prev) => [...prev, timetable]);
-    setTimetable(next);
+
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        timetable: [...timetable],
+        substitutions: [...substitutions],
+      },
+    ]);
+
+    setTimetable(next.timetable);
+    setSubstitutions(next.substitutions);
+
     setRedoStack((prev) => prev.slice(1));
     setNotice("Redo successful.");
     setNoticeKind("info");
   };
+
   useEffect(() => {
     if (isFirstMount.current) {
       isFirstMount.current = false;
       return;
     }
             setTimetable(safeArray(project?.data?.timetable));
-    setSubstitutions(safeArray(project?.data?.substitutions));
+    setSubstitutions(
+  safeArray(project?.data?.substitutions)
+    .map(normalizeSubstitutionRecord)
+    .filter(Boolean)
+);
     setAbsences(
       safeArray(project?.data?.absences).map(normalizeAbsence).filter(Boolean)
     );
@@ -751,9 +785,21 @@ export default function TimetableBuilder({
         !ids.includes(e.id) &&
         e.day === day &&
         e.periodId === periodId &&
-        effectiveTeacherId(e) === teacherId
+        e.teacherId === teacherId
     );
   }
+  function removeFutureSubstitutionsForEntries(entryIds) {
+  const ids = new Set(entryIds.filter(Boolean));
+  const today = getTodayLocal();
+
+  setSubstitutions((prev) =>
+    prev.filter(
+      (s) =>
+        !ids.has(s.timetableEntryId) ||
+        (s.date && s.date < today)
+    )
+  );
+}
 
   function flash(kind, text) {
     setNoticeKind(kind);
@@ -786,9 +832,7 @@ export default function TimetableBuilder({
       if (existing) {
         saveHistory();
         setTimetable((p) => p.filter((e) => e.id !== existing.id));
-        setSubstitutions((p) =>
-          p.filter((s) => s.timetableEntryId !== existing.id)
-        );
+        removeFutureSubstitutionsForEntries([existing.id]);
       }
       setNotice("");
       return;
@@ -843,9 +887,7 @@ const record = {
       function clearSlot(entry) {
     saveHistory(); // <--- ADD HERE
     setTimetable((p) => p.filter((e) => e.id !== entry.id));
-    setSubstitutions((p) =>
-      p.filter((s) => s.timetableEntryId !== entry.id)
-    );
+    removeFutureSubstitutionsForEntries([entry.id]);
     flash("info", "Period cleared.");
   }
 
@@ -855,9 +897,7 @@ const record = {
     saveHistory(); // <--- ADD HERE
     const ids = new Set(toRemove.map((e) => e.id));
     setTimetable((prev) => prev.filter((e) => !ids.has(e.id)));
-    setSubstitutions((prev) =>
-      prev.filter((s) => !ids.has(s.timetableEntryId))
-    );
+    removeFutureSubstitutionsForEntries([...ids]);
     flash("info", "Period cleared.");
   }
 
@@ -888,67 +928,161 @@ const record = {
     e.dataTransfer.dropEffect = "move";
   }
 
-  function handleDrop(e, day, classId, sectionId, periodId) {
+    function handleDrop(e, day, classId, sectionId, periodId) {
     e.preventDefault();
+
     const src = draggedSlot.current;
     draggedSlot.current = null;
+
     if (!src) return;
+
+    // Ignore dropping into the same cell.
     if (
       src.day === day &&
       src.classId === classId &&
       src.sectionId === sectionId &&
       src.periodId === periodId
-    )
+    ) {
       return;
+    }
 
-    const srcEntry = getEntry(src.day, src.classId, src.sectionId, src.periodId);
+    // Check the complete source cell, including parallel-group entries.
+    const sourceCellEntries = getAllEntriesAt(
+      src.day,
+      src.classId,
+      src.sectionId,
+      src.periodId
+    );
+
+    if (sourceCellEntries.length > 1) {
+      return flash(
+        "warn",
+        "Cannot drag a parallel-group cell. Clear or manage the parallel group first."
+      );
+    }
+
+    // Check the complete destination cell.
+    const destinationCellEntries = getAllEntriesAt(
+      day,
+      classId,
+      sectionId,
+      periodId
+    );
+
+    if (destinationCellEntries.length > 1) {
+      return flash(
+        "warn",
+        "Cannot drop into a parallel-group cell. Clear or manage the parallel group first."
+      );
+    }
+
+    const srcEntry = sourceCellEntries[0];
+
     if (!srcEntry) return;
-    const dstEntry = getEntry(day, classId, sectionId, periodId);
 
-    // Both entries are being swapped/moved — exclude them from busy checks.
+    const dstEntry = destinationCellEntries[0] || null;
+
+    // Exclude the moving/swapping entries from teacher-busy checks.
     const exclude = [srcEntry.id, dstEntry?.id].filter(Boolean);
 
-    const srcTeacherId = effectiveTeacherId(srcEntry);
-    const dstTeacherId = dstEntry ? effectiveTeacherId(dstEntry) : "";
+    // Drag-and-drop edits the permanent timetable,
+// so always use the originally assigned teachers.
+const srcTeacherId = srcEntry.teacherId || "";
+const dstTeacherId = dstEntry
+  ? dstEntry.teacherId || ""
+  : "";
 
-    // Do not move a subject into a class/section where it is not mapped.
-    if (!subjectMappings.some(
-      (m) => m.classId === classId && m.subjectId === srcEntry.subjectId &&
-        Number(m.periodsPerWeek) > 0
-    )) {
-      return flash("error", "Cannot move: this subject is not mapped to the destination class.");
-    }
-    if (srcTeacherId && !teacherMappings.some(
-      (m) => m.classId === classId && m.sectionId === sectionId &&
-        m.subjectId === srcEntry.subjectId && m.teacherId === srcTeacherId
-    )) {
-      return flash("error", "Cannot move: this teacher is not mapped to the destination section for this subject.");
-    }
-    if (dstEntry && !subjectMappings.some(
-      (m) => m.classId === src.classId && m.subjectId === dstEntry.subjectId &&
-        Number(m.periodsPerWeek) > 0
-    )) {
-      return flash("error", "Cannot swap: the destination subject is not mapped to the source class.");
-    }
-    if (dstEntry && dstTeacherId && !teacherMappings.some(
-      (m) => m.classId === src.classId && m.sectionId === src.sectionId &&
-        m.subjectId === dstEntry.subjectId && m.teacherId === dstTeacherId
-    )) {
-      return flash("error", "Cannot swap: the destination teacher is not mapped to the source section for this subject.");
+    // Validate source subject mapping in the destination class.
+    const sourceSubjectMapped = subjectMappings.some(
+      (mapping) =>
+        mapping.classId === classId &&
+        mapping.subjectId === srcEntry.subjectId &&
+        Number(mapping.periodsPerWeek) > 0
+    );
+
+    if (!sourceSubjectMapped) {
+      return flash(
+        "error",
+        "Cannot move: this subject is not mapped to the destination class."
+      );
     }
 
+    // Validate source teacher mapping in the destination section.
     if (
       srcTeacherId &&
-      teacherIsBusy(srcTeacherId, day, periodId, exclude)
+      !teacherMappings.some(
+        (mapping) =>
+          mapping.classId === classId &&
+          mapping.sectionId === sectionId &&
+          mapping.subjectId === srcEntry.subjectId &&
+          mapping.teacherId === srcTeacherId
+      )
+    ) {
+      return flash(
+        "error",
+        "Cannot move: this teacher is not mapped to the destination section for this subject."
+      );
+    }
+
+    // If swapping, validate destination subject in the source class.
+    if (
+      dstEntry &&
+      !subjectMappings.some(
+        (mapping) =>
+          mapping.classId === src.classId &&
+          mapping.subjectId === dstEntry.subjectId &&
+          Number(mapping.periodsPerWeek) > 0
+      )
+    ) {
+      return flash(
+        "error",
+        "Cannot swap: the destination subject is not mapped to the source class."
+      );
+    }
+
+    // If swapping, validate destination teacher in the source section.
+    if (
+      dstEntry &&
+      dstTeacherId &&
+      !teacherMappings.some(
+        (mapping) =>
+          mapping.classId === src.classId &&
+          mapping.sectionId === src.sectionId &&
+          mapping.subjectId === dstEntry.subjectId &&
+          mapping.teacherId === dstTeacherId
+      )
+    ) {
+      return flash(
+        "error",
+        "Cannot swap: the destination teacher is not mapped to the source section for this subject."
+      );
+    }
+
+    // Prevent the source teacher from having another class at destination.
+    if (
+      srcTeacherId &&
+      teacherIsBusy(
+        srcTeacherId,
+        day,
+        periodId,
+        exclude
+      )
     ) {
       return flash(
         "error",
         "Cannot move: the teacher is already teaching at the destination period."
       );
     }
+
+    // Prevent the destination teacher from having another class at source.
     if (
       dstTeacherId &&
-      teacherIsBusy(dstTeacherId, src.day, src.periodId, exclude)
+      teacherIsBusy(
+        dstTeacherId,
+        src.day,
+        src.periodId,
+        exclude
+      )
     ) {
       return flash(
         "error",
@@ -956,41 +1090,54 @@ const record = {
       );
     }
 
-        saveHistory(); // <--- ADD HERE
+    // Save history only after every validation has passed.
+    saveHistory();
+
+    // Move or swap entries atomically.
     setTimetable((prev) => {
       const next = prev.filter(
-        (e) => e.id !== srcEntry.id && e.id !== dstEntry?.id
+        (entry) =>
+          entry.id !== srcEntry.id &&
+          entry.id !== dstEntry?.id
       );
+
+      // Move the source entry to the destination cell.
       next.push({
-  ...srcEntry,
-  day,
-  classId,
-  sectionId,
-  periodId,
-  fixed: true,
-  updatedAt: new Date().toISOString(),
-});
-if (dstEntry) {
-  next.push({
-    ...dstEntry,
-    day: src.day,
-    classId: src.classId,
-    sectionId: src.sectionId,
-    periodId: src.periodId,
-    fixed: true,
-    updatedAt: new Date().toISOString(),
-  });
-}
+        ...srcEntry,
+        day,
+        classId,
+        sectionId,
+        periodId,
+        fixed: true,
+        updatedAt: new Date().toISOString(),
+      });
+
+      // If destination was occupied, swap it back to the source cell.
+      if (dstEntry) {
+        next.push({
+          ...dstEntry,
+          day: src.day,
+          classId: src.classId,
+          sectionId: src.sectionId,
+          periodId: src.periodId,
+          fixed: true,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
       return next;
     });
-    setSubstitutions((prev) =>
-      prev.filter(
-        (s) =>
-          s.timetableEntryId !== srcEntry.id &&
-          s.timetableEntryId !== dstEntry?.id
-      )
+
+    // Preserve historical records; remove affected current/future arrangements.
+removeFutureSubstitutionsForEntries([
+  srcEntry.id,
+  dstEntry?.id,
+]);
+
+    flash(
+      "info",
+      dstEntry ? "Periods swapped." : "Period moved."
     );
-    flash("info", dstEntry ? "Periods swapped." : "Period moved.");
   }
 
   /* ------------------------------------------------------------------ */
@@ -1200,7 +1347,7 @@ if (dstEntry) {
           (c) =>
             c.day === day &&
             c.periodId === item.id &&
-            effectiveTeacherId(c) === teacher.id
+            c.teacherId === teacher.id
         );
         return entry
           ? `${getName(subjects, entry.subjectId)}\n${getName(
@@ -1410,8 +1557,8 @@ if (dstEntry) {
     }
 
     const entries = timetable.filter(
-      (e) => effectiveTeacherId(e) === teacher.id
-    );
+  (e) => e.teacherId === teacher.id
+);
 
     days.forEach((day, dayIdx) => {
       const rowNumber = startRow + 5 + dayIdx;
@@ -2092,49 +2239,82 @@ if (dstEntry) {
   /* ------------------------------------------------------------------ */
   /* summaries                                                          */
   /* ------------------------------------------------------------------ */
+    /* ------------------------------------------------------------------ */
+  /* summaries                                                          */
+  /* ------------------------------------------------------------------ */
+
+  // Teacher clash groups reflect the currently selected substitution date.
   const clashGroups = useMemo(() => {
     const counts = new Map();
-    timetable.forEach((e) => {
-      if (!e.teacherId) return;
-      const key = `${e.day}::${e.periodId}::${effectiveTeacherId(e)}`;
+
+    timetable.forEach((entry) => {
+      const assignedTeacherId = effectiveTeacherId(entry);
+
+      if (!assignedTeacherId) return;
+
+      const key =
+        `${entry.day}::${entry.periodId}::${assignedTeacherId}`;
+
       counts.set(key, (counts.get(key) || 0) + 1);
     });
-    return [...counts.values()].filter((n) => n > 1).length;
-  }, [timetable, substitutions]);
 
+    return [...counts.values()].filter((count) => count > 1).length;
+  }, [timetable, substitutions, substitutionDate]);
+
+  // Workload summary reflects the effective teacher assignment
+  // for the currently selected substitution date.
   const workload = useMemo(() => {
     const map = new Map();
-    teachers.forEach((t) =>
-      map.set(t.id, {
-        teacher: t,
+
+    teachers.forEach((teacher) => {
+      map.set(teacher.id, {
+        teacher,
         periods: 0,
         classes: new Set(),
         subjects: new Set(),
-      })
-    );
-    timetable.forEach((e) => {
-      const assignedTeacherId = effectiveTeacherId(e);
-      if (!assignedTeacherId) return;
-      const row = map.get(assignedTeacherId);
-      if (!row) return;
-      row.periods += 1;
-      row.classes.add(e.classId);
-      row.subjects.add(e.subjectId);
+      });
     });
-    return [...map.values()].sort((a, b) => b.periods - a.periods);
-  }, [timetable, teachers]);
+
+    timetable.forEach((entry) => {
+      const assignedTeacherId = effectiveTeacherId(entry);
+
+      if (!assignedTeacherId) return;
+
+      const row = map.get(assignedTeacherId);
+
+      if (!row) return;
+
+      row.periods += 1;
+      row.classes.add(entry.classId);
+      row.subjects.add(entry.subjectId);
+    });
+
+    return [...map.values()].sort(
+      (a, b) => b.periods - a.periods
+    );
+  }, [timetable, teachers, substitutions, substitutionDate]);
 
   const totalSlots =
-    classes.reduce((sum, c) => sum + getSections(c).length, 0) *
+    classes.reduce(
+      (sum, classItem) => sum + getSections(classItem).length,
+      0
+    ) *
     periods.length *
     days.length;
 
   const assignedCount = useMemo(
     () =>
-      timetable.filter(
-        (e) => e.subjectId && teachers.some((t) => t.id === effectiveTeacherId(e))
-      ).length,
-    [timetable, teachers]
+      timetable.filter((entry) => {
+        const assignedTeacherId = effectiveTeacherId(entry);
+
+        return (
+          entry.subjectId &&
+          teachers.some(
+            (teacher) => teacher.id === assignedTeacherId
+          )
+        );
+      }).length,
+    [timetable, teachers, substitutions, substitutionDate]
   );
 
   /* ------------------------------------------------------------------ */
@@ -2263,17 +2443,29 @@ if (dstEntry) {
                       >
                         <div
                           className={`tt-edit-cell${isParallel ? " tt-edit-cell-parallel" : ""}`}
-                          draggable={!!entry && !isParallel}
+                          draggable={!!entry && !isParallel && !isDoublePair}
                           onDragStart={(e) => {
-                            if (isParallel) return;
-                            handleDragStart(
-                              e,
-                              day,
-                              classItem.id,
-                              section.id,
-                              item.id
-                            );
-                          }}
+  if (isParallel || isDoublePair) {
+    e.preventDefault();
+
+    if (isDoublePair) {
+      flash(
+        "warn",
+        "This is part of a double period. Edit both periods together."
+      );
+    }
+
+    return;
+  }
+
+  handleDragStart(
+    e,
+    day,
+    classItem.id,
+    section.id,
+    item.id
+  );
+}}
                         >
                                                     {isParallel && (
                             <>
@@ -3013,18 +3205,37 @@ if (dstEntry) {
           )
       );
 
-    const setStatus = (id, status) =>
-      setAbsences((prev) =>
-        prev.map((a) =>
-          a.id === id
-            ? {
-                ...a,
-                verifiedStatus: status,
-                verifiedAt: new Date().toISOString(),
-              }
-            : a
-        )
-      );
+    const setStatus = (id, status) => {
+  const verifiedAt = new Date().toISOString();
+
+  const absence = absences.find((a) => a.id === id);
+  if (!absence) return;
+
+  setAbsences((prev) =>
+    prev.map((a) =>
+      a.id === id
+        ? {
+            ...a,
+            verifiedStatus: status,
+            verifiedAt,
+          }
+        : a
+    )
+  );
+
+  setSubstitutions((prev) =>
+    prev.map((s) =>
+      s.date === absence.date &&
+      s.originalTeacherId === absence.teacherId
+        ? {
+            ...s,
+            verifiedStatus: status,
+            verifiedAt,
+          }
+        : s
+    )
+  );
+};
 
         const removeRecord = (id) => {
       if (!window.confirm("Delete this absence record? This cannot be undone.")) return;
@@ -3048,8 +3259,12 @@ if (dstEntry) {
         (e) => e.day === a.day && e.teacherId === a.teacherId
       ).length;
       const covered = substitutions.filter(
-        (s) => s.date === a.date && s.originalTeacherId === a.teacherId
-      ).length;
+  (s) =>
+    s.date === a.date &&
+    s.originalTeacherId === a.teacherId &&
+    s.substituteTeacherId &&
+    s.verifiedStatus !== "not-covered"
+).length;
       return { total, covered };
     };
 
@@ -3181,8 +3396,12 @@ if (dstEntry) {
       (e) => e.day === a.day && e.teacherId === a.teacherId
     ).length;
     const covered = substitutions.filter(
-      (s) => s.date === a.date && s.originalTeacherId === a.teacherId
-    ).length;
+  (s) =>
+    s.date === a.date &&
+    s.originalTeacherId === a.teacherId &&
+    s.substituteTeacherId &&
+    s.verifiedStatus !== "not-covered"
+).length;
     return [
       a.date || "—",
       a.day || "—",

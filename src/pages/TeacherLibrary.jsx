@@ -342,19 +342,74 @@ function TeacherLibrary({ project, onSave, onContinue }) {
         setNotice(`${teacher.name} restored.`);
   }
 
+function parseCsvRows(csvText) {
+  const text = String(csvText || "").replace(/^\uFEFF/, "");
+
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      row.push(field.trim());
+      field = "";
+    } else if (
+      (char === "\n" || char === "\r") &&
+      !inQuotes
+    ) {
+      if (char === "\r" && next === "\n") {
+        i++;
+      }
+
+      row.push(field.trim());
+
+      if (row.some((value) => value !== "")) {
+        rows.push(row);
+      }
+
+      row = [];
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+
+  row.push(field.trim());
+
+  if (row.some((value) => value !== "")) {
+    rows.push(row);
+  }
+
+  return rows;
+}
+
   function importTeachersFromCsv(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = String(e.target.result || "");
-      const lines = text.split(/\r?\n/).filter((line) => line.trim());
-      const parsed = lines
-        .map((line) => {
-          const [rawName, rawNick] = line.split(",").map((s) => s.trim());
-          return { name: rawName || "", nickname: rawNick || "" };
-        })
-        .filter((t) => t.name && t.nickname);
+      
+const rows = parseCsvRows(text);
+
+const parsed = rows
+  .map((row) => ({
+    name: row[0] || "",
+    nickname: row[1] || "",
+  }))
+  .filter((teacher) => teacher.name && teacher.nickname);
+
 
       if (!parsed.length) {
         setNotice("No valid rows found. Use the format: Full Name,Nickname");

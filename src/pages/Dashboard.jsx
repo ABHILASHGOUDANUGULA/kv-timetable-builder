@@ -210,6 +210,14 @@ function readProjects() {
 
 export default function Dashboard({ session }) {
   const [projects, setProjects] = useState(readProjects);
+
+// Tracks projects that the user has deleted.
+// Prevents a later cloud save from re-creating them.
+const deletedProjectIdsRef = useRef(new Set());
+
+// Tracks the most recent in-flight cloud save.
+// Cloud deletion will wait for this save to finish.
+const cloudSavePromiseRef = useRef(Promise.resolve());
   const [cloudLoaded, setCloudLoaded] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
@@ -364,15 +372,21 @@ export default function Dashboard({ session }) {
     return () => { cancelled = true; };
   }, [session?.user?.id]);
 
-  // Debounced upsert of the account's project list. Wait until initial cloud
-  // loading is complete so the initial browser state cannot overwrite cloud data.
-  useEffect(() => {
-    const userId = session?.user?.id;
-    if (!userId || !cloudLoaded) return;
+  // Debounced cloud save.
+// Deleted projects are excluded so they cannot be re-created by a later save.
+useEffect(() => {
+  const userId = session?.user?.id;
 
-    setSaveStatus("saving");
-    const timer = window.setTimeout(async () => {
-             const payload = projects.map((project) => ({
+  if (!userId || !cloudLoaded) return;
+
+  setSaveStatus("saving");
+
+  const timer = window.setTimeout(async () => {
+    const deletedIds = deletedProjectIdsRef.current;
+
+    const payload = projects
+      .filter((project) => !deletedIds.has(project.id))
+      .map((project) => ({
         id: project.id,
         user_id: userId,
         title: project.schoolName || "Untitled school",
@@ -381,14 +395,21 @@ export default function Dashboard({ session }) {
         updated_at: project.updatedAt || new Date().toISOString(),
       }));
 
-      if (payload.length === 0) {
-        setSaveStatus("saved");
-        return;
-      }
+    // Do not send an empty upsert.
+    // Empty project lists are handled by explicit deletion.
+    if (payload.length === 0) {
+      setSaveStatus("saved");
+      return;
+    }
 
-      const { error } = await supabase
-        .from("timetables")
-        .upsert(payload, { onConflict: "id" });
+    const savePromise = supabase
+      .from("timetables")
+      .upsert(payload, { onConflict: "id" });
+
+    cloudSavePromiseRef.current = savePromise;
+
+    try {
+      const { error } = await savePromise;
 
       if (error) {
         console.error("Cloud save failed:", error.message);
@@ -397,10 +418,15 @@ export default function Dashboard({ session }) {
       } else {
         setSaveStatus("saved");
       }
-    }, 700);
+    } catch (error) {
+      console.error("Unexpected cloud save error:", error);
+      setSaveStatus("error");
+      setNotice("Cloud save failed unexpectedly. Please try again.");
+    }
+  }, 700);
 
-    return () => window.clearTimeout(timer);
-  }, [projects, session?.user?.id, cloudLoaded]);
+  return () => window.clearTimeout(timer);
+}, [projects, session?.user?.id, cloudLoaded]);
 
   useEffect(() => {
     if (selectedProjectId) {
@@ -489,41 +515,80 @@ export default function Dashboard({ session }) {
     setNotice(`Opened ${project.schoolName || "project"}.`);
   }
 
-  function deleteProject(project) {
-    if (!project?.id) return;
+  
+async function deleteProject(project) {
+  if (!project?.id) return;
 
-    const confirmed = window.confirm(
-      `Delete "${project.schoolName || "this project"}"? This cannot be undone.`
+  const confirmed = window.confirm(
+    `Delete "${project.schoolName || "this project"}"? This cannot be undone.`
+  );
+
+  if (!confirmed) return;
+
+  const projectId = project.id;
+  const userId = session?.user?.id;
+
+  // Mark the project as deleted before changing React state.
+  // This prevents future cloud-save payloads from including it.
+  deletedProjectIdsRef.current.add(projectId);
+
+  // Remove it from the local project list immediately.
+  setProjects((previous) =>
+    previous.filter((item) => item.id !== projectId)
+  );
+
+  // If this was the selected project, return to the Dashboard.
+  if (selectedProjectId === projectId) {
+    const remainingProjects = projects.filter(
+      (item) => item.id !== projectId
     );
-    if (!confirmed) return;
 
-    // Flush safety: any in-flight save from a child for this project is
-    // harmless — the child unmounts and its pending record flushes; then
-    // the filter below drops the project. Subsequent calls find nothing.
-    setProjects((previous) => previous.filter((p) => p.id !== project.id));
+    setSelectedProjectId(
+      remainingProjects.length > 0
+        ? remainingProjects[0].id
+        : null
+    );
 
-    if (session?.user?.id) {
-      supabase
+    setActivePage("Dashboard");
+  }
+
+  if (userId) {
+    try {
+      // Wait for the latest cloud save to finish before deleting.
+      await cloudSavePromiseRef.current;
+
+      // Explicitly delete the project from Supabase.
+      const { error } = await supabase
         .from("timetables")
         .delete()
-        .eq("id", project.id)
-        .eq("user_id", session.user.id)
-        .then(({ error }) => {
-          if (error) {
-            console.error("Cloud project deletion failed:", error.message);
-            setNotice(`Cloud delete failed: ${error.message}`);
-          }
-        });
-    }
+        .eq("id", projectId)
+        .eq("user_id", userId);
 
-    if (selectedProjectId === project.id) {
-      const remaining = projects.filter((p) => p.id !== project.id);
-      setSelectedProjectId(remaining.length ? remaining[0].id : null);
-      setActivePage("Dashboard");
-    }
+      if (error) {
+        console.error("Cloud project deletion failed:", error.message);
 
-    setNotice(`Deleted "${project.schoolName || "project"}".`);
+        setNotice(
+          `Project removed from this screen, but cloud deletion failed: ${error.message}`
+        );
+
+        setSaveStatus("error");
+        return;
+      }
+    } catch (error) {
+      console.error("Unexpected project deletion error:", error);
+
+      setNotice(
+        "Project removed from this screen, but cloud deletion could not be confirmed."
+      );
+
+      setSaveStatus("error");
+      return;
+    }
   }
+
+  setNotice(`Deleted "${project.schoolName || "project"}".`);
+}
+
 
   // ---------------- Project data updates ----------------
   //
@@ -574,8 +639,101 @@ export default function Dashboard({ session }) {
     updateProjectData("bellSchedule", data);
   }
   function updateProjectClasses(data) {
-    updateProjectData("classes", data);
-  }
+  const nextClasses = Array.isArray(data) ? data : [];
+
+  const validClassIds = new Set(
+    nextClasses.map((item) => item.id)
+  );
+
+  const validSectionKeys = new Set(
+    nextClasses.flatMap((classItem) =>
+      (Array.isArray(classItem.sections) ? classItem.sections : [])
+        .map((section) => `${classItem.id}::${section.id}`)
+    )
+  );
+
+  const isValidClassSection = (item) =>
+    validClassIds.has(item.classId) &&
+    validSectionKeys.has(`${item.classId}::${item.sectionId}`);
+
+  const projectId = selectedProject?.id;
+  if (!projectId) return;
+
+  setProjects((previous) =>
+    previous.map((project) => {
+      if (project.id !== projectId) return project;
+
+      const oldData = project.data || {};
+
+      const nextTimetable = (
+        Array.isArray(oldData.timetable) ? oldData.timetable : []
+      ).filter(isValidClassSection);
+
+      const validTimetableEntryIds = new Set(
+        nextTimetable.map((entry) => entry.id)
+      );
+
+      const nextSubstitutions = (
+        Array.isArray(oldData.substitutions)
+          ? oldData.substitutions
+          : []
+      ).filter((item) =>
+        validTimetableEntryIds.has(item.timetableEntryId)
+      );
+
+      const nextSettings = {
+        ...(oldData.timetableSettings || {}),
+        fixedRules: (
+          Array.isArray(oldData.timetableSettings?.fixedRules)
+            ? oldData.timetableSettings.fixedRules
+            : []
+        ).filter(isValidClassSection),
+      };
+
+      return {
+        ...project,
+        updatedAt: new Date().toISOString(),
+        version: (Number(project.version) || 0) + 1,
+        data: {
+          ...oldData,
+
+          // Update classes
+          classes: nextClasses,
+
+          // Remove mappings belonging to deleted classes
+          mappings: (
+            Array.isArray(oldData.mappings) ? oldData.mappings : []
+          ).filter((item) => validClassIds.has(item.classId)),
+
+          optionSets: (
+            Array.isArray(oldData.optionSets) ? oldData.optionSets : []
+          ).filter((item) => validClassIds.has(item.classId)),
+
+          // Teacher assignments must reference a valid class + section
+          teacherMappings: (
+            Array.isArray(oldData.teacherMappings)
+              ? oldData.teacherMappings
+              : []
+          ).filter(isValidClassSection),
+
+          // Remove timetable entries referencing deleted classes/sections
+          timetable: nextTimetable,
+
+          // Remove substitutions for removed timetable entries
+          substitutions: nextSubstitutions,
+
+          // Remove class-specific allocation records
+          allocations: (
+            Array.isArray(oldData.allocations) ? oldData.allocations : []
+          ).filter((item) => validClassIds.has(item.classId)),
+
+          // Remove fixed rules for deleted sections
+          timetableSettings: nextSettings,
+        },
+      };
+    })
+  );
+}
   function updateProjectSubjects(data) {
     updateProjectData("subjects", data);
   }

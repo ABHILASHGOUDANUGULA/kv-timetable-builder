@@ -1,53 +1,127 @@
-// src/lib/timetableSolver.js
-//
-// Worker bridge for the CP-SAT solver.
-// Vite bundles the worker natively via `new Worker(new URL(...), {
-// type: 'module' })`, so no extra plugin is needed.
-//
-// The solver always resolves with a result object (never rejects),
-// so callers can safely `await` without a try/catch.
+
+ // src/lib/timetableSolver.js
 
 let worker = null;
 let nextId = 1;
+
 const pending = new Map();
+
+// CP-SAT currently has a 60-second solve limit.
+// Allow a little extra time for worker communication.
+const REQUEST_TIMEOUT_MS = 70_000;
+
+function clearPendingRequest(id) {
+  const request = pending.get(id);
+
+  if (request) {
+    clearTimeout(request.timer);
+    pending.delete(id);
+  }
+
+  return request;
+}
 
 function getWorker() {
   if (!worker) {
-    worker = new Worker(new URL("./cpSatWorker.js", import.meta.url), {
-      type: "module",
-    });
+    worker = new Worker(
+      new URL("./cpSatWorker.js", import.meta.url),
+      { type: "module" }
+    );
+
     worker.onmessage = (event) => {
-      const { id, result } = event.data;
-      const resolve = pending.get(id);
-      if (resolve) {
-        pending.delete(id);
-        resolve(result);
+      const { id, result } = event.data || {};
+      const request = clearPendingRequest(id);
+
+      if (request) {
+        request.resolve(
+          result || {
+            ok: false,
+            reason: "worker-error",
+            message: "Worker returned an empty result.",
+          }
+        );
       }
     };
+
     worker.onerror = (err) => {
-      for (const resolve of pending.values()) {
-        resolve({
-          ok: false,
-          reason: "worker-error",
-          message: err.message || "CP-SAT worker crashed",
-        });
+      const errorMessage =
+        err.message || "CP-SAT worker crashed.";
+
+      for (const [id] of pending) {
+        const request = clearPendingRequest(id);
+
+        if (request) {
+          request.resolve({
+            ok: false,
+            reason: "worker-error",
+            message: errorMessage,
+          });
+        }
       }
-      pending.clear();
+
+      worker?.terminate();
       worker = null;
     };
   }
+
   return worker;
 }
 
-/**
- * Async entry point. Same params and same result shape as the old
- * sync `solveTimetable`. Backed by CP-SAT running in a Web Worker.
- */
 export function solveTimetableAsync(params) {
-  const w = getWorker();
-  const id = nextId++;
   return new Promise((resolve) => {
-    pending.set(id, resolve);
-    w.postMessage({ id, params });
+    const id = nextId++;
+
+    let w;
+
+    try {
+      w = getWorker();
+    } catch (err) {
+      resolve({
+        ok: false,
+        reason: "worker-error",
+        message: err?.message || "Unable to start CP-SAT worker.",
+      });
+      return;
+    }
+
+    const timer = setTimeout(() => {
+  // The Worker may still be busy solving. Terminate it so the next
+  // generation request can start with a clean Worker.
+  const oldWorker = worker;
+  worker = null;
+
+  oldWorker?.terminate();
+
+  // Resolve every pending request because all were sent to this Worker.
+  for (const [pendingId] of pending) {
+    const request = clearPendingRequest(pendingId);
+
+    if (request) {
+      request.resolve({
+        ok: false,
+        reason: "worker-timeout",
+        message:
+          "The timetable solver timed out. The worker was restarted. Please try generating again.",
+      });
+    }
+  }
+}, REQUEST_TIMEOUT_MS);
+
+    pending.set(id, { resolve, timer });
+
+    try {
+      w.postMessage({ id, params });
+    } catch (err) {
+      const request = clearPendingRequest(id);
+
+      if (request) {
+        request.resolve({
+          ok: false,
+          reason: "worker-error",
+          message:
+            err?.message || "Failed to send request to solver worker.",
+        });
+      }
+    }
   });
 }

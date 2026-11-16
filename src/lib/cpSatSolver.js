@@ -144,19 +144,143 @@ export async function solveTimetableCpSat(params) {
     }
   }
 
-  // subjectInOptionSet[(secKey,sub)] = optionSetId | null
+    // ── Validate and prepare active subject option sets ──────────────────────
+
   const subjectInOptionSet = new Map();
   const optionSetsFor = new Map();
+
+  // Tracks which option set owns each subject for a given class.
+  const optionSetOwnerByClass = new Map();
+
+  const activeOptionSets = optionSets.filter(
+    (os) => os && os.active !== false
+  );
+
+  // Validate every active option set before creating the solver model.
+  for (const os of activeOptionSets) {
+    if (!os.id || !os.classId) {
+      return {
+        ok: false,
+        reason: "invalid-option-set",
+        message:
+          "An active subject option set has a missing ID or class. " +
+          "Correct the option-set configuration before generating.",
+      };
+    }
+
+    if (!Array.isArray(os.subjectIds) || os.subjectIds.length === 0) {
+      return {
+        ok: false,
+        reason: "invalid-option-set",
+        message:
+          `Option set "${os.name || os.id}" has no subjects. ` +
+          "Add subjects or deactivate this option set.",
+      };
+    }
+
+    const uniqueSubjectIds = [...new Set(os.subjectIds)];
+
+    if (uniqueSubjectIds.length !== os.subjectIds.length) {
+      return {
+        ok: false,
+        reason: "duplicate-option-set-subject",
+        message:
+          `Option set "${os.name || os.id}" contains duplicate subjects. ` +
+          "Remove the duplicate subject entries.",
+      };
+    }
+
+    const periodsPerWeek = Number(os.periodsPerWeek);
+
+    if (
+      !Number.isFinite(periodsPerWeek) ||
+      periodsPerWeek < 0 ||
+      !Number.isInteger(periodsPerWeek)
+    ) {
+      return {
+        ok: false,
+        reason: "invalid-option-set-periods",
+        message:
+          `Option set "${os.name || os.id}" has an invalid ` +
+          "periods-per-week value. Enter a non-negative whole number.",
+      };
+    }
+
+    for (const subId of uniqueSubjectIds) {
+      if (!subjectSet.has(subId)) {
+        return {
+          ok: false,
+          reason: "unknown-option-set-subject",
+          message:
+            `Option set "${os.name || os.id}" references a subject ` +
+            "that no longer exists in the Subject Library. " +
+            "Remove or replace that subject.",
+        };
+      }
+
+      const subjectIsMapped = subjectMappings.some(
+        (mapping) =>
+          mapping.classId === os.classId &&
+          mapping.subjectId === subId &&
+          Number(mapping.periodsPerWeek) > 0
+      );
+
+      if (!subjectIsMapped) {
+        const subjectName =
+          subjects.find((subject) => subject.id === subId)?.name || subId;
+
+        return {
+          ok: false,
+          reason: "unmapped-option-set-subject",
+          message:
+            `"${subjectName}" in option set "${os.name || os.id}" ` +
+            "is not mapped to this class with a positive weekly period count. " +
+            "Correct the Subject Mapping first.",
+        };
+      }
+
+      const ownershipKey = `${os.classId}::${subId}`;
+      const existingOwner = optionSetOwnerByClass.get(ownershipKey);
+
+      if (existingOwner) {
+        const existingSet =
+          activeOptionSets.find((set) => set.id === existingOwner);
+
+        const subjectName =
+          subjects.find((subject) => subject.id === subId)?.name || subId;
+
+        return {
+          ok: false,
+          reason: "overlapping-option-sets",
+          message:
+            `"${subjectName}" is included in more than one active option set ` +
+            `for class ${os.classId}: ` +
+            `"${existingSet?.name || existingOwner}" and ` +
+            `"${os.name || os.id}". ` +
+            "Each subject must belong to only one active option set per class.",
+        };
+      }
+
+      optionSetOwnerByClass.set(ownershipKey, os.id);
+    }
+  }
+
+  // Build section-level option-set lookups.
   allSections.forEach((sec) => {
-    const sets = optionSets.filter(
-      (os) => os.classId === sec.classId && os.active !== false
+    const sets = activeOptionSets.filter(
+      (os) => os.classId === sec.classId
     );
+
     optionSetsFor.set(sec.key, sets);
-    sets.forEach((os) =>
-      os.subjectIds.forEach((subId) =>
-        subjectInOptionSet.set(`${sec.key}::${subId}`, os.id)
-      )
-    );
+
+    sets.forEach((os) => {
+      os.subjectIds.forEach((subId) => {
+        subjectInOptionSet.set(
+          `${sec.key}::${subId}`,
+          os.id
+        );
+      });
+    });
   });
 
   let solverPromise = null;
@@ -355,48 +479,250 @@ async function getSolver() {
     });
   }
 
-  // ── Constraint 8: fixed rules forced to 1 ─────────────────────────────────
-  function findVar(sec, subId, d, p) {
-    const inOption = subjectInOptionSet.get(`${sec.key}::${subId}`);
-    return inOption
-      ? y[`${sec.key}::${inOption}::${d}::${p}`]
-      : x[`${sec.key}::${subId}::${d}::${p}`];
+ // ── Constraint 8: fixed rules force subject AND specified teacher ──────────
+
+function findVar(sec, subId, d, p) {
+  const inOption = subjectInOptionSet.get(`${sec.key}::${subId}`);
+
+  return inOption
+    ? y[`${sec.key}::${inOption}::${d}::${p}`]
+    : x[`${sec.key}::${subId}::${d}::${p}`];
+}
+
+fixedRules.forEach((rule) => {
+  const sec = allSections.find(
+    (s) =>
+      s.classId === rule.classId &&
+      s.sectionId === rule.sectionId
+  );
+
+  if (!sec) {
+    console.warn("Fixed rule skipped: section not found.", rule);
+    return;
   }
 
-  fixedRules.forEach((rule) => {
-    const sec = allSections.find(
-      (s) => s.classId === rule.classId && s.sectionId === rule.sectionId
-    );
-    if (!sec) return;
-    const d = days.indexOf(rule.day);
-    const p = periods.findIndex((period) => period.id === rule.periodId);
-    if (d === -1 || p === -1) return;
-    const v = findVar(sec, rule.subjectId, d, p);
-    if (v) model.add(v.equals(1));
-  });
+  const d = days.indexOf(rule.day);
 
-  // ── Constraint 9: preserve existing entries ───────────────────────────────
-  const preserveEntries =
-    mode === "empty"
-      ? existingTimetable
-      : existingTimetable.filter((e) => e.fixed === true);
+  const p = periods.findIndex(
+    (period) => period.id === rule.periodId
+  );
 
-  preserveEntries.forEach((e) => {
-    const sec = allSections.find(
-      (s) => s.classId === e.classId && s.sectionId === e.sectionId
+  if (d === -1 || p === -1) {
+    console.warn("Fixed rule skipped: invalid day or period.", rule);
+    return;
+  }
+
+  // Confirm that the subject is mapped to this class.
+  if (!validSubjects.get(sec.key)?.has(rule.subjectId)) {
+    console.warn(
+      "Fixed rule skipped: subject is not mapped to this class.",
+      rule
     );
-    if (!sec) return;
-    const d = days.indexOf(e.day);
-    const p = periods.findIndex((period) => period.id === e.periodId);
-    if (d === -1 || p === -1) return;
-    const v = findVar(sec, e.subjectId, d, p);
-    if (v) model.add(v.equals(1));
-    // Pin the teacher too, so CP-SAT doesn't silently reassign
-    if (e.teacherId) {
-      const tvv = tv[`${sec.key}::${e.subjectId}::${e.teacherId}::${d}::${p}`];
-      if (tvv) model.add(tvv.equals(1));
+    return;
+  }
+
+  // Force the subject into the specified day and period.
+  const subjectVar = findVar(
+    sec,
+    rule.subjectId,
+    d,
+    p
+  );
+
+  if (!subjectVar) {
+    console.warn(
+      "Fixed rule skipped: subject variable does not exist.",
+      rule
+    );
+    return;
+  }
+
+  model.add(subjectVar.equals(1));
+
+  // If the rule specifies a teacher, force that exact teacher.
+  if (rule.teacherId) {
+    const teacherIsMapped = (
+      teachersFor.get(`${sec.key}::${rule.subjectId}`) || []
+    ).includes(rule.teacherId);
+
+    if (!teacherIsMapped) {
+      console.warn(
+        "Fixed rule skipped: specified teacher is not mapped to this subject.",
+        rule
+      );
+      return;
     }
-  });
+
+    const teacherVar =
+      tv[
+        `${sec.key}::${rule.subjectId}::${rule.teacherId}::${d}::${p}`
+      ];
+
+    if (!teacherVar) {
+      console.warn(
+        "Fixed rule skipped: teacher variable does not exist.",
+        rule
+      );
+      return;
+    }
+
+    // This prevents the solver from assigning another mapped teacher.
+    model.add(teacherVar.equals(1));
+  }
+});
+
+  // ── Constraint 9: validate and preserve existing entries ──────────────────
+
+const preserveEntries =
+  mode === "empty"
+    ? existingTimetable
+    : existingTimetable.filter((entry) => entry.fixed === true);
+
+// Validate all entries first.
+// Do not silently skip entries that cannot be preserved.
+const invalidPreservedEntries = [];
+
+const validatedPreservedEntries = preserveEntries.map((entry) => {
+  const sec = allSections.find(
+    (s) =>
+      s.classId === entry.classId &&
+      s.sectionId === entry.sectionId
+  );
+
+  if (!sec) {
+    invalidPreservedEntries.push({
+      entry,
+      reason: "Class or section no longer exists.",
+    });
+
+    return null;
+  }
+
+  const d = days.indexOf(entry.day);
+
+  const p = periods.findIndex(
+    (period) => period.id === entry.periodId
+  );
+
+  if (d === -1 || p === -1) {
+    invalidPreservedEntries.push({
+      entry,
+      reason: "Day or period no longer exists in the bell schedule.",
+    });
+
+    return null;
+  }
+
+  if (!validSubjects.get(sec.key)?.has(entry.subjectId)) {
+    invalidPreservedEntries.push({
+      entry,
+      reason: "Subject is no longer mapped to this class.",
+    });
+
+    return null;
+  }
+
+  const subjectVar = findVar(
+    sec,
+    entry.subjectId,
+    d,
+    p
+  );
+
+  if (!subjectVar) {
+    invalidPreservedEntries.push({
+      entry,
+      reason: "Subject variable could not be found.",
+    });
+
+    return null;
+  }
+
+  let teacherVar = null;
+
+  if (entry.teacherId) {
+    const mappedTeachers =
+      teachersFor.get(`${sec.key}::${entry.subjectId}`) || [];
+
+    if (!mappedTeachers.includes(entry.teacherId)) {
+      invalidPreservedEntries.push({
+        entry,
+        reason: "Preserved teacher is no longer mapped to this subject.",
+      });
+
+      return null;
+    }
+
+    teacherVar =
+      tv[
+        `${sec.key}::${entry.subjectId}::${entry.teacherId}::${d}::${p}`
+      ];
+
+    if (!teacherVar) {
+      invalidPreservedEntries.push({
+        entry,
+        reason: "Teacher variable could not be found.",
+      });
+
+      return null;
+    }
+  }
+
+  return {
+    entry,
+    subjectVar,
+    teacherVar,
+  };
+});
+
+// Stop generation if any preserved entry is invalid.
+if (invalidPreservedEntries.length > 0) {
+  const details = invalidPreservedEntries
+    .slice(0, 5)
+    .map(({ entry, reason }) => {
+      const className =
+        classes.find((c) => c.id === entry.classId)?.name ||
+        entry.classId;
+
+      return `${className} ${entry.sectionId}, ${entry.day}: ${reason}`;
+    })
+    .join("\n");
+
+  return {
+    ok: false,
+    reason: "invalid-preserved-entries",
+    message:
+      `Generation stopped because ${invalidPreservedEntries.length} existing ` +
+      `timetable entr${invalidPreservedEntries.length === 1 ? "y is" : "ies are"} ` +
+      `invalid and cannot be preserved.\n\n${details}` +
+      (invalidPreservedEntries.length > 5
+        ? "\nAdditional invalid entries were also found."
+        : ""),
+    invalidEntries: invalidPreservedEntries.map(
+      ({ entry, reason }) => ({
+        entryId: entry.id,
+        classId: entry.classId,
+        sectionId: entry.sectionId,
+        day: entry.day,
+        periodId: entry.periodId,
+        subjectId: entry.subjectId,
+        teacherId: entry.teacherId,
+        reason,
+      })
+    ),
+  };
+}
+
+// Apply constraints only after all entries have passed validation.
+validatedPreservedEntries.forEach((item) => {
+  if (!item) return;
+
+  model.add(item.subjectVar.equals(1));
+
+  if (item.teacherVar) {
+    model.add(item.teacherVar.equals(1));
+  }
+});
 
   // ─────────────────────────────── solve ───────────────────────────────
   let result;

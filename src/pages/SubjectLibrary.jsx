@@ -733,19 +733,74 @@ function SubjectLibrary({ project, onSave, onSaveMappings, onSaveOptionSets, onC
         setNotice(`${subject.name} removed from Class ${schoolClass.name}.`);
   }
 
+function parseCsvRows(csvText) {
+  const text = String(csvText || "").replace(/^\uFEFF/, "");
+
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        field += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      row.push(field.trim());
+      field = "";
+    } else if (
+      (char === "\n" || char === "\r") &&
+      !inQuotes
+    ) {
+      if (char === "\r" && next === "\n") {
+        i++;
+      }
+
+      row.push(field.trim());
+
+      if (row.some((value) => value !== "")) {
+        rows.push(row);
+      }
+
+      row = [];
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+
+  row.push(field.trim());
+
+  if (row.some((value) => value !== "")) {
+    rows.push(row);
+  }
+
+  return rows;
+}
+
   function importSubjectsFromCsv(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = String(e.target.result || "");
-      const lines = text.split(/\r?\n/).filter((line) => line.trim());
-      const parsed = lines
-        .map((line) => {
-          const [rawName, rawShort] = line.split(",").map((s) => s.trim());
-          return { name: rawName || "", shortName: rawShort || "" };
-        })
-        .filter((s) => s.name);
+      
+const rows = parseCsvRows(text);
+
+const parsed = rows
+  .map((row) => ({
+    name: row[0] || "",
+    shortName: row[1] || "",
+  }))
+  .filter((subject) => subject.name);
+
 
       if (!parsed.length) {
         setNotice("No valid rows found. Use the format: Subject Name,Short Name");
