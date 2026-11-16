@@ -1058,3 +1058,140 @@
     animation-iteration-count: 1 !important;
   }
 }
+/* Larger Download and Delete icons in project cards */
+.project-card .icon-button {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 1px solid #e5e7f2;
+  border-radius: 13px;
+  background: #f7f8fc;
+  color: #5148d8;
+  box-shadow: 0 2px 7px rgba(30, 38, 68, 0.06);
+}
+
+.project-card .icon-button svg {
+  width: 25px;
+  height: 25px;
+  stroke-width: 2.4;
+}
+
+.project-card .icon-button:hover {
+  color: #3930b8;
+  border-color: #c9c5ff;
+  background: #eeedff;
+  transform: translateY(-2px);
+}
+
+/* Delete icon */
+.project-card .icon-button-danger {
+  color: #d04455;
+  border-color: #f2d8dc;
+  background: #fff5f6;
+}
+
+.project-card .icon-button-danger:hover {
+  color: #a91f34;
+  border-color: #efb9c1;
+  background: #ffe8eb;
+}
+
+/* Mobile */
+@media (max-width: 700px) {
+  .project-card .icon-button {
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    min-height: 46px;
+  }
+
+  .project-card .icon-button svg {
+    width: 24px;
+    height: 24px;
+  }
+}
+/* Align Download and Delete buttons horizontally */
+.project-card .project-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+.project-card .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+}
+
+/* Keep buttons side by side on mobile */
+@media (max-width: 700px) {
+  .project-card .project-actions {
+    flex-direction: row;
+    gap: 10px;
+  }
+}
+/* Keep Download and Delete buttons side by side */
+.project-card {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.project-card .project-school-icon {
+  flex: 0 0 43px;
+}
+
+.project-card .project-info {
+  flex: 1 1 calc(100% - 60px);
+  min-width: 0;
+}
+
+.project-card .draft-badge {
+  margin-right: auto;
+}
+
+.project-card > .secondary-button {
+  flex: 1;
+  min-height: 48px;
+}
+
+.project-card > .icon-button {
+  flex: 0 0 50px;
+  width: 50px;
+  height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.project-card > .icon-button svg {
+  width: 25px;
+  height: 25px;
+}
+
+/* Delete button */
+.project-card > .icon-button-danger {
+  color: #dc3545;
+  background: #fff0f1;
+  border: 1px solid #ffd5d9;
+}
+
+/* Mobile */
+@media (max-width: 700px) {
+  .project-card {
+    flex-wrap: wrap;
+  }
+
+  .project-card > .secondary-button {
+    flex: 1 1 100%;
+  }
+}

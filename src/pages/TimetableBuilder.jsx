@@ -568,7 +568,7 @@ export default function TimetableBuilder({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [undoStack, redoStack, timetable]); // dependencies ensure the closures have latest state
+  }, [undoStack, redoStack, timetable, substitutions]); // keep undo/redo closures in sync
 
   /* Unmount flush — guarantees that quick navigation never loses work. */
   

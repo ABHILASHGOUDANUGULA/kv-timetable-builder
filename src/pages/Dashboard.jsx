@@ -223,7 +223,22 @@ const cloudSavePromiseRef = useRef(Promise.resolve());
   const [showModal, setShowModal] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
 
-  const [activePage, setActivePage] = useState("Dashboard");
+  const [activePage, setActivePage] = useState(() => {
+  try {
+    const savedPage = window.localStorage?.getItem(ACTIVE_PAGE_KEY);
+
+    if (
+      savedPage === "Dashboard" ||
+      IMPLEMENTED_PAGES.has(savedPage)
+    ) {
+      return savedPage;
+    }
+  } catch (error) {
+    console.error("Unable to restore active page:", error);
+  }
+
+  return "Dashboard";
+});
 
   const [notice, setNotice] = useState("");
   const [saveStatus, setSaveStatus] = useState("saved");
@@ -457,12 +472,16 @@ useEffect(() => {
   }, [projects, selectedProjectId]);
 
 
-  // Reset to Dashboard if the active page needs a project but none is selected.
-  useEffect(() => {
-    if (!selectedProject && PROJECT_PAGES.has(activePage)) {
-      setActivePage("Dashboard");
-    }
-  }, [selectedProject, activePage]);
+  // Reset only after project loading is complete.
+useEffect(() => {
+  if (
+    cloudLoaded &&
+    !selectedProject &&
+    PROJECT_PAGES.has(activePage)
+  ) {
+    setActivePage("Dashboard");
+  }
+}, [cloudLoaded, selectedProject, activePage]);
 
   // ---------------- Navigation ----------------
 
